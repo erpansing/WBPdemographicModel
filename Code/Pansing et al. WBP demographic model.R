@@ -25,7 +25,7 @@ source(paste0(proj_dir, code_dir,"Pansing et al. WBP parameter estimation.R"))
 n <- c(300, 90, 100, 300, 700, 
        500, 50, 500, 120, 600)
 
-area <- 2e3 * 10000
+area <- 2000
 
 ## Write function for determining leaf area index (LAI) as a function
 ## of stage specific dbh and the number of trees on the landscape
@@ -34,51 +34,14 @@ area <- 2e3 * 10000
 ##                        Define LAI                         ##
 ##***********************************************************##
 
-#mean dbh for each stage
-# d1 <- function() {   # dbh SEED1
-#   return(0)
-# }
-
-# d2 <- function() {   #dbh SEED2 
-#   return(0)
-# }
-# 
-# d3 <- function(){ #dbh CS
-#   return(0)
-# }
-# 
-# d4 <- function(){ #dbh SD1
-#   return(0)
-# }
-# 
-# d5 <- function(){ # dbh SAP
-#   return(6.69)
-# }
-# 
-# d6 <-function() { #dbh MA
-#   return(30.2)  # mean dbh taken from trees cored on HM in 2015. The average dbh of trees >12.5cm dbh (the sapling)
-# }
 # 
 # ## Leaf area coefficients. Define the relationship between leaf area and diameter.
 # ## Estimated via MLE assuming the general form y = ax^b
 # 
-# alpha1 <- function(){
-#   return(0.456)
-# }
 
 alpha1 <- 0.456
 
-# 
-# alpha2 <- function(){
-#   return(0.0736)
-# }
-
 alpha2 <- 0.0736
-
-# 
-# alpha3 <- function(){
-#   return(2.070)
-# }
 
 alpha3 <- 2.070
 
@@ -118,8 +81,6 @@ Others <- data.frame(PICO = c( rep(0, 7),                 54, 29, 33,   1, 59),
                      ABLA = c(78, 81, 46, 34, 55, 33, 21, 12,  9,  4,   6, 13),
                      UNK  = c( 6,  4, 14,  4,  0,  1,  1, 25, 32, 27,   6, 43),
                      StudyArea = c(rep("Henderson", 7), rep("Washburn", 5)))
-
-
 
 
 Others <- Others %>%
@@ -260,7 +221,8 @@ s_SD     <- function(size = 1){         # survival probability of seedlings
 ##-----------------------------------------------------------##
 
 s_SAP     <- function(){         # Survival probability of saplings
-  return(0.8)                    # Still looking for a distribution to 
+  runif(n = size, min = 0.919, max = 0.973) # Data from Rochefort et al. 2018
+  # return(0.8)                    # Still looking for a distribution to 
 }                                # use, so for now assuming constant
 
 ##-----------------------------------------------------------##
@@ -284,10 +246,11 @@ survival_vector <- function(size = 1, MA_s_alpha, MA_s_beta){   #survival vector
     rbeta(n = size,                   # Drawn from a beta to give prob 
           shape1 = SD_survive_alpha,  # of seedling survival in any given year
           shape2 = SD_survive_beta),
-    0.8,
+    runif(n = size,
+          min = 0.919, max = 0.973),
     rbeta(n = size,                   # Assume limited death from senescence because 
-          shape1 = MA_s_alpha,        # of long lived nature of wbp (lifespan up to 1200 yrs)
-          shape2 = MA_s_beta) )       # But mortality comes from MBP, WPBR, and senescence
+          shape1 = MA_s_alpha_historic,        # of long lived nature of wbp (lifespan up to 1200 yrs)
+          shape2 = MA_s_beta_historic) )       # But mortality comes from MBP, WPBR, and senescence
 }
 
 # survival_vector()
@@ -312,14 +275,14 @@ residence_vector <-
 residence_vector
 
 
-si <- function(size = 1, MA_s_alpha, MA_s_beta){                  # Gives probability of surviving and staying in the
+si <- function(size = 1, MA_s_alpha_historic, MA_s_beta_historic){                  # Gives probability of surviving and staying in the
   (1 - (1/residence_vector)) *         # same life stage for those life stages
     survival_vector(size = size, 
                     MA_s_alpha = MA_s_alpha,
                     MA_s_beta = MA_s_beta)       # that have residence time > 1 (i.e., persist in the
 }                                      # same life stage for > 1 year)
 
-ti <- function(size = 1, MA_s_alpha, MA_s_beta) {                 # Gives probability of surviving and transitioning
+ti <- function(size = 1, MA_s_alpha_historic, MA_s_beta_historic) {                 # Gives probability of surviving and transitioning
   (1/residence_vector) *               # to the next life stage for those life stages
     survival_vector(size = size, 
                     MA_s_alpha = MA_s_alpha,
@@ -353,7 +316,6 @@ No_cones <- function(t, size = 1){ # Seed production in wbp is periodic
 
 Pfind  <- 0.55   # Proportion of seeds found by nutcrackers
 Pcons  <- 0.3    # Proportion of seeds consumed by nutcracers (prior to caching?)
-# nBirds <- 3      # No. Clark's nutcrackers in the theoretical population
 SpC    <- 3      # No. seeds per cache
 
 ##-----------------------------------------------------------##

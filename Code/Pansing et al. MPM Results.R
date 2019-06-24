@@ -40,7 +40,7 @@ model_file <- "Pansing et al. MPM Model Final? Gamma fire.R"
 figures_dir <- "Figures/Final?/"
 export_table_dir <-  "Exported Data Tables/"
 
-area <- 2e3 * 10000 # Area of 2000 ha total, 1000ha/population. Multiply by 10e3 to get m2
+area <- 2000 # Area of 2000 ha total, 1000ha/population. Multiply by 10e3 to get m2
 
 ################################################################################
 #---------------------------------------|---------------------------------------
@@ -307,7 +307,7 @@ ggplot(data = density_tSinceFire, aes(x = tSinceFire, y = SAP_MA_Density_median)
               alpha = 0.2)+
   geom_line(lwd = 1.5) +
   theme_bw() +
-  labs(x = "Time since fire", y = expression(paste("Median sapling and mature tree density (no. trees/", m^2,")")))+
+  labs(x = "Time since fire", y = expression(paste("Median sapling and mature tree density (no. trees/hectare)")))+
   theme(axis.text = element_text(size = axis_text_size)) +
   theme(axis.title = element_text(size = axis_label_text_size))
 
@@ -1056,7 +1056,7 @@ density_tSinceFire <-  pops %>%
   summarise_at(., vars(MA_Density, SAP_Density, SAP_MA_Density, Density), funs(mean, median, min, lower, q1, q3, upper, max)))
 
 
-write.csv(year30density, file = paste0(proj_dir, export_table_dir, "30 Year Post Fire Density Historical dispersal averaged.csv"))
+write.csv(year30density, file = paste0(proj_dir, export_table_dir, "30 Year Post Fire Density Historical dispersal averaged in hectares.csv"))
 
 
 year100200300400500 <- pops %>% 
@@ -1093,7 +1093,7 @@ density_tSinceFire %>%
   geom_line(aes(col = Dispersal_probability), lwd = 1.5) +
   scale_color_manual(values = c("#ef8a62", "#67a9cf")) +
   theme_bw() +
-  labs(x = "\nTime since fire (years)", y = expression(paste("Median sapling and mature tree density (no. trees/", m^2,")")))+
+  labs(x = "\nTime since fire (years)", y = expression(paste("Median sapling and mature tree density (no. trees/hectare)")))+
   theme(axis.text = element_text(size = axis_text_size)) +
   theme(axis.title = element_text(size = axis_label_text_size))+
   theme(legend.position = "none") +
@@ -1273,7 +1273,7 @@ rm(historic_model_summary, current_model_summary)
     theme(plot.margin = grid::unit(c(2.5, 1, 1, 1), "lines")) + # top, right, bottom, left
     scale_x_continuous(breaks = seq(0, 500, by = 100))+
     labs(x = "Time (years)",
-         y = expression(paste("Median sapling and mature tree density (no. trees/", m^2,")")))+
+         y = expression(paste("Median sapling and mature tree density (no. trees/hectare)")))+
     geom_hline(yintercept = 0, col = "black", lty = 2))
 
 
@@ -1339,7 +1339,7 @@ grid::grid.draw(legd)
     theme(plot.margin = grid::unit(c(2.5, 1, 1, 1), "lines")) + # top, right, bottom, left
     scale_x_continuous(breaks = seq(0, 500, by = 125))+
     labs(x = "Time (years)",
-         y = expression(paste("Median sapling and mature tree density (no. trees/", m^2,")")))+
+         y = expression(paste("Median sapling and mature tree density (no. trees/hectare)")))+
     geom_hline(yintercept = 0, col = "black", lty = 2))
 
 
@@ -1999,7 +1999,7 @@ year500density %>%
   scale_fill_manual(values =  c("#d73027", "#1a9850", "#fee08b")) +
   theme_bw() +
   facet_grid(Panel~Dispersal_probability, scales = "free") +
-  labs(x = expression(paste("\nTree density (no. trees/", m^2,") at year 500")), y = "Probability density")+
+  labs(x = expression(paste("\nTree density (no. trees/hectare) at year 500")), y = "Probability density")+
   theme(axis.text = element_text(size = axis_text_size - 2)) +
   theme(axis.title = element_text(size = axis_label_text_size))+
   theme(strip.text =  element_text(size = strip_text_size),

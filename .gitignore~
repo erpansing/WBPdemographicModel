@@ -17,6 +17,5 @@
 *.Rproj.user
 *.Rhistory
 *.RData
-*.Ruserdata
+.Ruserdata
 *.DS_Store
-*.csv

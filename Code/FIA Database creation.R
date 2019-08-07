@@ -3,120 +3,124 @@ library(rpostgis)
 library(postGIStools)
 library(tidyverse)
 library(sp)
-library(sf)
+# library(sf)
 library(ggmap)
 library(readxl)
 library(lubridate)
 
 options(scipen = 999)
 
-# Intially create DB. Only needs to be done 1st time. Creates db called "FIADB"
+##------------------------
+## SET UP DATABASE
+##------------------------
+# 
+# # Intially create DB. Only needs to be done 1st time. Creates db called "FIADB"
 # system(paste0("createdb FIADB"))
-
-#connect to database - locally hosted
-fia_db_conn <- DBI::dbConnect("PostgreSQL", dbname = 'FIADB', host = 'localhost', port = '5432')
-
-#check connection - list tables in db
-dbListTables(fia_db_conn)
-
-dbDisconnect(conn = fia_db_conn)
-
-#read in Wyoming FIA data
-
-file_list <- list.files(path = "/Users/elizabethpansing/Box Sync/PhD/WY FIA Data/WY/", pattern = "*.csv")
-
-
-for(i in 1:length(file_list)){
-  print(paste0("Reading file ", i, " of ", length(file_list)))
-  name <- gsub(pattern =  '.csv*', '', file_list[i])
-  try(assign(name, read.csv(paste0("/Users/elizabethpansing/Box Sync/PhD/WY FIA Data/WY/",file_list[i]))), silent = FALSE)
-}
-
-# From AP's og script: "Insert the tables into the database. In this case if the table already exists it
-# overwrites it, which is not a good idea for a safe workflow as you wouldn't want to change the DB completely
-# everytime you added in data, I only do this here because my structure is not determined yet and
-# I keep changing the structure have backups of the original dta. In the future this command can
-# be easily changed to only update/append to an existing table for a safer workflow."
-
-fia_db_conn <- DBI::dbConnect("PostgreSQL", dbname = 'FIADB', host = 'localhost', port = '5432')
-
-wyfia_pattern <- grep("WY_",names(.GlobalEnv),value = TRUE)
-
-for(i in wyfia_pattern){
-  if(nrow(get(i))> 0){
-    x <- get(i)
-  names(x) <- tolower(names(x))
-  DBI::dbWriteTable(conn = fia_db_conn, name = tolower(i), value = x)
-  }
-}
-
-# check to make sure they uploaded properly
-dbListTables(fia_db_conn)
-
-# assign primary key. All PKs are the CN variable, so write a loop to assign it to each
-# table with a new PK title.
-
-tables <- data.frame(table = DBI::dbListTables(conn = fia_db_conn),
-                     pk = tolower(c("TRE_PK",
-                                    "ISS_PK",
-                                    "CND_PK",
-                                    "DRP_PK",
-                                    NA,
-                                    "SDL_PK",
-                                    "SBP_PK",
-                                    "PEV_PK",
-                                    NA,
-                                    "P2VSSP_PK",
-                                    "SCD_PK",
-                                    NA,
-                                    "DCW_PK",
-                                    "P2VSS_PK",
-                                    "DVT_PK",
-                                    "BND_PK",
-                                    "DTS_PK",
-                                    "PET_PK",
-                                    "PLOTSNP_PK",
-                                    "TGE_PK",
-                                    "SRV_PK",
-                                    "PEG_PK",
-                                    "PEA_PK",
-                                    "CDC_PK",
-                                    "PLOTGEOM_PK",
-                                    "DDL_PK",
-                                    "DFW_PK",
-                                    "PEU_PK",
-                                    "SIT_PK",
-                                    "PLT_PK",
-                                    "TRE_GRM_CMP_PK",
-                                    "TRE_GRM_MIDPT_PK", 
-                                    "CTY_PK",
-                                    "TRB_PK",
-                                    "PSM_PK",
-                                    "PPSA_PK")))
-
-tables <- na.omit(tables)
-
-DBI::dbDisconnect(fia_db_conn)
-
-
-fia_db_conn <- DBI::dbConnect("PostgreSQL", dbname = 'FIADB', host = 'localhost', port = '5432')
-
-# set primary key for the
-for(i in tables$table){
-  x <- tables[tables$table == i,]
-try(dbGetQuery(conn = fia_db_conn, paste0('ALTER TABLE ',x$table,' ADD CONSTRAINT ', x$pk,' PRIMARY KEY ("cn");')))
-}
-
-## Doesn't work for those with multiple entries for the primary key (CN)
-
-# out <- dbListTables(conn = fia_db_conn)
-# for(i in out){
-#   dbRemoveTable(conn = fia_db_conn, name = i)
+# 
+# #connect to database - locally hosted
+# fia_db_conn <- DBI::dbConnect("PostgreSQL", dbname = 'FIADB', host = 'localhost', port = '5432')
+# 
+# #check connection - list tables in db
+# dbListTables(fia_db_conn)
+# 
+# dbDisconnect(conn = fia_db_conn)
+# 
+# #read in Wyoming FIA data
+# 
+# file_list <- list.files(path = "/Users/elizabethpansing/Box/PhD/WY FIA Data/WY/", pattern = "*.csv")
+# 
+# 
+# for(i in 1:length(file_list)){
+#   print(paste0("Reading file ", i, " of ", length(file_list)))
+#   name <- gsub(pattern =  '.csv*', '', file_list[i])
+#   try(assign(name, read.csv(paste0("/Users/elizabethpansing/Box/PhD/WY FIA Data/WY/",file_list[i]))), silent = FALSE)
 # }
 # 
-# dbListTables(conn = fia_db_conn)
-
-DBI::dbDisconnect(fia_db_conn)
+# # From AP's og script: "Insert the tables into the database. In this case if the table already exists it
+# # overwrites it, which is not a good idea for a safe workflow as you wouldn't want to change the DB completely
+# # everytime you added in data, I only do this here because my structure is not determined yet and
+# # I keep changing the structure have backups of the original dta. In the future this command can
+# # be easily changed to only update/append to an existing table for a safer workflow."
+# 
+# fia_db_conn <- DBI::dbConnect("PostgreSQL", dbname = 'FIADB', host = 'localhost', port = '5432')
+# 
+# wyfia_pattern <- grep("WY_",names(.GlobalEnv),value = TRUE)
+# 
+# for(i in wyfia_pattern){
+#   if(nrow(get(i))> 0){
+#     x <- get(i)
+#   names(x) <- tolower(names(x))
+#   DBI::dbWriteTable(conn = fia_db_conn, name = tolower(i), value = x)
+#   }
+# }
+# 
+# # check to make sure they uploaded properly
+# dbListTables(fia_db_conn)
+# 
+# # assign primary key. All PKs are the CN variable, so write a loop to assign it to each
+# # table with a new PK title.
+# 
+# tables <- data.frame(table = DBI::dbListTables(conn = fia_db_conn),
+#                      pk = tolower(c("DVT_PK",
+#                                     "SDL_PK",
+#                                     "PEG_PK",
+#                                     "PEU_PK",
+#                                     "PSM_PK",
+#                                     "PEV_PK",
+#                                     "SIT_PK",
+#                                     "TGE_PK",
+#                                     "CTY_PK",
+#                                     "PPSA_PK",
+#                                     NA,
+#                                     "DDL_PK",
+#                                     "PLOTGEOM_PK",
+#                                     NA,
+#                                     NA,
+#                                     "PLOTSNP_PK",
+#                                     "SCD_PK",
+#                                     "BND_PK",
+#                                     "TRE_GRM_MIDPT_PK", 
+#                                     "PEA_PK",
+#                                     "CDC_PK",
+#                                     "PET_PK",
+#                                     "CND_PK",
+#                                     "PLT_PK",
+#                                     "TRE_PK",
+#                                     "P2VSSP_PK",
+#                                     "SBP_PK",
+#                                     "SRV_PK",
+#                                     "DRP_PK",
+#                                     "TRB_PK",
+#                                     "ISS_PK",
+#                                     "P2VSS_PK",
+#                                     "DFW_PK",
+#                                     "DCW_PK",
+#                                     "DTS_PK",
+#                                     "TRE_GRM_CMP_PK")))
+# 
+# tables <- na.omit(tables)
+# 
+# DBI::dbDisconnect(fia_db_conn)
+# 
+# 
+# fia_db_conn <- DBI::dbConnect("PostgreSQL", dbname = 'FIADB', host = 'localhost', port = '5432')
+# 
+# # set primary key for the
+# for(i in tables$table){
+#   x <- tables[tables$table == i,]
+# try(dbGetQuery(conn = fia_db_conn, paste0('ALTER TABLE ',x$table,' ADD CONSTRAINT ', x$pk,' PRIMARY KEY ("cn");')))
+# }
+# 
+# ## Doesn't work for those with multiple entries for the primary key (CN)
+# 
+# # out <- dbListTables(conn = fia_db_conn)
+# # for(i in out){
+# #   dbRemoveTable(conn = fia_db_conn, name = i)
+# # }
+# # 
+# # dbListTables(conn = fia_db_conn)
+# 
+# DBI::dbDisconnect(fia_db_conn)
 
 #--------------------------------
 # Merge manual version into TRE

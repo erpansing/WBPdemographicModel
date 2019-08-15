@@ -5,17 +5,16 @@ library(RMark)
 library(ggplot2)
 library(reshape2)
 
-load("/Users/elizabethpansing/Box Sync/PhD/Code/WBP Demographic Model Master/WBPdemographicModel/Data/pial_survival_data.Rds")
+load("/Users/elizabethpansing/Box/PhD/Code/WBP Demographic Model Master/WBPdemographicModel/Data/pial_survival_data.Rds")
 
 
   # 1. A model of constant survival rate (SR)
   
-wbp.results <-  mark(pial_SD, nocc = 28, model="Nest",
+wbp.results <-  RMark::mark(pial_SD, nocc = 28, model="Nest",
              model.parameters = list(S = list(formula = ~1)))
 
 
-
-wbp.results       
+# wbp.results       
 
 SD_survival_mean <- wbp.results$results$real$estimate
 SD_survival_var  <- nrow(pial_SD) * (wbp.results$results$real$se)^2

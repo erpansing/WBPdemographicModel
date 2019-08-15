@@ -15,14 +15,15 @@ library(tidyverse)
 ## 4) survival.Rda
 ## 5) MTBS RdNBR in WBP GYE habitat.R
 
-proj_dir <- '/Users/elizabethpansing/Box Sync/PhD/Code/WBP Demographic Model Master/WBPdemographicModel/'
+proj_dir <- '/Users/elizabethpansing/Box/PhD/Code/WBP Demographic Model Master/WBPdemographicModel/'
 data_dir <- "Data/"
 rda_dir  <- "Rda/"
 code_dir <- "Code/"
 
 
-source(paste0(proj_dir, code_dir,"Pansing et al. WBP parameter estimation.R"))
-load(paste0("/Users/elizabethpansing/Box Sync/PhD/Code/WBP Demographic Model Master/Dis_WBP_MODEL_ACTIVE/", data_dir, "rdnbr_dat.Rds"))
+source(paste0(proj_dir, code_dir,"Pansing et al. WBP parameter estimation_revision.R"))
+load(paste0("/Users/elizabethpansing/Box/PhD/Code/WBP Demographic Model Master/Dis_WBP_MODEL_ACTIVE/", data_dir, "rdnbr_dat.Rds"))
+load(file = paste0(proj_dir, data_dir, "FIA derived densitites.Rda"))
 
 noNAdat_rdnbr <- na.omit(rdnbr_dat)
 
@@ -558,15 +559,14 @@ predicted <- predict.glm(object = fit, newdata = predicted_fire_return_decrease,
 library(plyr)
 
 
-n <- c(300, 90, 100, 300, 99951, 
-       500, 50, 500, 120, 2e5-9951)
+# n <- c(300, 90, 100, 300, 99951, 
+#        500, 50, 500, 120, 2e5-9951)
 
 # # Params for troubleshooting
 projection_time <- 10
-n0 <- n
 reps <- 3
-FRI_decrease <- TRUE
-fire <- TRUE
+FRI_decrease <- FALSE
+fire <- FALSE
 dispersal_distance <- "High"
 period <- "Current"
 j <- 1
@@ -578,12 +578,10 @@ i <- 1
 ############################################################################################################################################## 
 ############################################################################################################################################## 
 
-project <- function(projection_time, n0, reps = 100, FRI_decrease = T, fire = T, dispersal_distance = "High",
+project <- function(projection_time, reps = 100, FRI_decrease = T, fire = T, dispersal_distance = "High",
                     period = "Current"){       # stochastic projection function 
   # that tracks stage based pop sizes 
   # over time for reps number of iterations
-  if(length(n0) != 10)
-    stop("\nPopulation size vector must be of length 10")
   if(!(dispersal_distance == "High" | dispersal_distance == "Low"))
     stop("\nUnknown dispersal distance. \nPlease use 'High' or 'Low'")
   if(!(period == "Current" | period == "Historic"))
@@ -591,7 +589,7 @@ project <- function(projection_time, n0, reps = 100, FRI_decrease = T, fire = T,
   
   
   results <-                                                 #Create null matrix that will hold stage
-    array(0, dim = c(projection_time, length(n0) + 1, reps)) # based population sizes and year tracker
+    array(0, dim = c(projection_time, 10 + 1, reps)) # based population sizes and year tracker
   
   # Assign dispersal probability
   if(dispersal_distance == "High"){
@@ -613,8 +611,10 @@ project <- function(projection_time, n0, reps = 100, FRI_decrease = T, fire = T,
     # Incorporate FIRE
     cat(paste0("......Iteration ", j,"......\n"))
     
-    
-    if(j == 1){           
+    #TODO: need to determine a distribution for seedling and second year seeds. 
+    if(j == 1){   
+      n0                 <- matrix(unlist(c(0, 0, 0, density_dbh_1_plus[sample(1:nrow(density_dbh_1_plus), size = 1), c('sapling_density', 'mature_density')],
+                                            0, 0, 0, density_dbh_1_plus[sample(1:nrow(density_dbh_1_plus), size = 1), c('sapling_density', 'mature_density')])), ncol = 1)
       fire_tracker       <- matrix(c(rep(1:reps, each = projection_time),rep(0, projection_time*reps*3)), 
                                    nrow = projection_time * reps, ncol = 4, byrow = F)  
       tSinceFire_tracker <- matrix(c(rep(1:reps, each = projection_time),rep(0, projection_time*reps*3)), 
@@ -642,6 +642,12 @@ project <- function(projection_time, n0, reps = 100, FRI_decrease = T, fire = T,
     # Create matrix of fire years for each subpopulation
     if(fire == T & FRI_decrease == F){
       fire_years <-matrix(round(c(cumsum(rgamma(6, fire_alpha, fire_beta)), cumsum(rgamma(6, fire_alpha, fire_beta))), 0),
+                          byrow = F, nrow = 6)
+      fire_years <- ifelse(fire_years > 500, NA, fire_years)
+      
+    } else if(fire == F){
+      fire_years <-matrix(round(c(cumsum(rgamma(6, fire_suppression_alpha, fire_suppression_beta)), 
+                                  cumsum(rgamma(6, fire_suppression_alpha, fire_suppression_beta))), 0),
                           byrow = F, nrow = 6)
       fire_years <- ifelse(fire_years > 500, NA, fire_years)
       
@@ -759,9 +765,9 @@ project <- function(projection_time, n0, reps = 100, FRI_decrease = T, fire = T,
     }
     
     ####### TRACK FIRE YEARS ACROSS ITERATIONS    
-    if(fire == T & j == 1){
+    if(j == 1){
       fire_tracker2 <- matrix(c(rep(j, nrow(fire_years)),fire_years), ncol = 3, byrow = F)
-    } else if(fire == T & j != 1){
+    } else if(j != 1){
       fire_tracker2 <- append(fire_tracker2 , matrix(c(rep(j, nrow(fire_years)),fire_years), ncol = 3, byrow = F))
     }
     
@@ -773,6 +779,7 @@ project <- function(projection_time, n0, reps = 100, FRI_decrease = T, fire = T,
       ## Set up initials for beginning of each iteration
       if (i == 1){
         n          <- n0
+        #TODO: Figure out how to better estimate tsince fire for starting population sizes
         tSinceFire <- c(1,1)
         tSinceFire_tracker[j*projection_time - (projection_time)+i,2:4] <- c(i, tSinceFire)
         # pops[i,]   <- n0
@@ -797,134 +804,107 @@ project <- function(projection_time, n0, reps = 100, FRI_decrease = T, fire = T,
       
       #--------------------------------------------------------------------------------------------------------------------------------------------      
       ##############################################################################################################################################            
-      ##                                                                FIRE POSSIBLE                    
+      ##                                                                FIRE                     
       ##############################################################################################################################################            
-      if(fire == T){
-        fire_current <- c(NA, NA)
-        fire_current[1] <- ifelse(t %in% fire_years[,1], 1, 0)
-        fire_current[2] <- ifelse(t %in% fire_years[,2], 1, 0)
+      # if(fire == T){
+      fire_current <- c(NA, NA)
+      fire_current[1] <- ifelse(t %in% fire_years[,1], 1, 0)
+      fire_current[2] <- ifelse(t %in% fire_years[,2], 1, 0)
+      
+      fire_tracker[j*projection_time - (projection_time)+i,2:4] <- c(i, fire_current)
+      
+      ## 1) There's a fire. This kills some proportion of the population. Assumes stand replacing burn that impacts entire population
+      ##    And that no regeneration occurs the year of the fire
+      ## 2) There's no fire and it's >1 year after fire. In this case, there are no modifications and the 
+      ##    system proceeds as normal. If it's the year after fire, the only seed source is from the other subpopulation
+      #--------------------------------------------------------------------------------------------------------------------------------------------              
+      ## Fire can occur in different combinations
+      ## 1) Fire in pop1 but not pop2: fire_current = 0,1
+      ## 2) Fire in pop2 but not pop1: fire_current = 1,0
+      ## 3) Fire in both populations: fire_current = 1,1
+      
+      ## 1) FIRE IN 1 BUT NOT 2
+      
+      if(fire_current[1] == T & fire_current[2] == F){                  
         
-        fire_tracker[j*projection_time - (projection_time)+i,2:4] <- c(i, fire_current)
+        tSinceFire <- c(0, tSinceFire[2])
         
-        ## 1) There's a fire. This kills some proportion of the population. Assumes stand replacing burn that impacts entire population
-        ##    And that no regeneration occurs the year of the fire
-        ## 2) There's no fire and it's >1 year after fire. In this case, there are no modifications and the 
-        ##    system proceeds as normal. If it's the year after fire, the only seed source is from the other subpopulation
-        #--------------------------------------------------------------------------------------------------------------------------------------------              
-        ## Fire can occur in different combinations
-        ## 1) Fire in pop1 but not pop2: fire_current = 0,1
-        ## 2) Fire in pop2 but not pop1: fire_current = 1,0
-        ## 3) Fire in both populations: fire_current = 1,1
+        tSinceFire_tracker[j*projection_time - (projection_time)+i,3:4] <- tSinceFire
         
-        ## 1) FIRE IN 1 BUT NOT 2
+        # Determine the proportion of the population that experiences different fire severities
+        # Assume that a certain proportion of saplings and mature trees are killed, but all seedlings and seeds are killed
         
-        if(fire_current[1] == T & fire_current[2] == F){                  
-          
-          tSinceFire <- c(0, tSinceFire[2])
-          
-          tSinceFire_tracker[j*projection_time - (projection_time)+i,3:4] <- tSinceFire
-          
-          # Determine the proportion of the population that experiences different fire severities
-          # Assume that a certain proportion of saplings and mature trees are killed, but all seedlings and seeds are killed
-          
-          
-          # Most fires go out with first snow. e.g., Romme 1982
-          
-          mat      <- S_fire_1(tSinceFire, s1 = s1, x = n, s2 = s2, t2 = t2)
-          
-          x <- mat %*% n  # Calculate intermediate population size
-          
-          ## Update parameters drawn from distributions/samples that must remain constant during each year
-          cones <- No_cones(t = t, size = 1) *rcones(n, tSinceFire = tSinceFire)
-          
-          caches1 <- No_caches_1_fire1
-          caches2 <- No_caches_2_fire1(cones = cones[2], t = t, size = 1, x = x)
-          
-          
-          pops[i,] <- c(t(x +
-                            germ1stpop2(t = t, size = 1, x = n, caches2 = caches2, tSinceFire = tSinceFire) +
-                            germ2ndpop2(t = t, size = 1, x = n, tSinceFire = tSinceFire) +
-                            dorm_2(t = t, caches2 = caches2, tSinceFire = tSinceFire)))
-          
-          n         <- as.matrix(pops[i,], nrow = length(pops[i,]), ncol = 1)
-          
-        } 
         
-        ## 2) FIRE IN 2 BUT NOT 1
+        # Most fires go out with first snow. e.g., Romme 1982
         
-        if(fire_current[1] == F & fire_current[2] == T){                  
-          
-          tSinceFire <- c(tSinceFire[1], 0)
-          
-          tSinceFire_tracker[j*projection_time - (projection_time)+i,3:4] <- tSinceFire 
-          
-          
-          # Assuming stand replacing burn with no survival and no regeneration.
-          # Most fires go out with first snow. e.g., Romme 1982
-          mat      <- S_fire_2(tSinceFire, x = n, s1 = s1, t1= t1, s2 = s2)
-          
-          x <- mat %*% n
-          
-          cones <- No_cones(t = t, size = 1) *rcones(n, tSinceFire = tSinceFire)
-          
-          caches1 <- No_caches_1_fire2(cones_1 = cones[1], t = t, size = 1, x = n)
-          caches2 <- No_caches_2_fire2
-          
-          
-          pops[i,] <- c(t(x + 
-                            germ1stpop1(t = t, size = 1, x = n, caches1 = caches1, tSinceFire = tSinceFire) +
-                            germ2ndpop1(t = t, size = 1, x = n, tSinceFire = tSinceFire)+
-                            dorm_1(t = t, caches1 = caches1, tSinceFire = tSinceFire)))
-          
-          n         <- as.matrix(pops[i,], nrow = length(pops[i,]), ncol = 1)
-          
-        }
+        mat      <- S_fire_1(tSinceFire, s1 = s1, x = n, s2 = s2, t2 = t2)
         
-        ## 3) FIRE IN BOTH
+        x <- mat %*% n  # Calculate intermediate population size
         
-        if(fire_current[1] == T & fire_current[2] == T){                  
-          
-          tSinceFire <- c(0, 0)
-          tSinceFire_tracker[j*projection_time - (projection_time)+i,3:4] <- tSinceFire
-          
-          cat(paste0("***Extinction in iteration ", j, " year ",t,"***\n"))
-          
-          pops[i,] <- c(t(S_fire_both %*% n))  # Defines the intermediate population size
-          
-          n         <- as.matrix(pops[i,], nrow = length(pops[i,]), ncol = 1)
-          
-        }
-        #--------------------------------------------------------------------------------------------------------------------------------------------              
-        #                                                 No fire in current year in either subpopulation
-        #--------------------------------------------------------------------------------------------------------------------------------------------              
-        else if(fire_current[1] == F & fire_current[2] == F){
-          
-          mat <- S(tSinceFire = tSinceFire, x = n, s1 = s1, s2 = s2, t1 = t1, t2 = t2)
-          
-          x <- mat%*%n
-          
-          cones <- No_cones(t = t, size = 1) *rcones(n, tSinceFire = tSinceFire)
-          
-          caches1 <- No_caches_1_nofire(cones_1 = cones[1], cones_2 = cones[2],  t = t, size = 1, x = n, dispersal_prob = dispersal_prob)
-          caches2 <- No_caches_2_nofire(cones_1 = cones[1], cones_2 = cones[2],  t = t, size = 1, x = n, dispersal_prob = dispersal_prob)
-          
-          
-          pops[i,]  <- c(t(x + 
-                             germ1stpop1(t = t, size = 1, x = n, caches1 = caches1, tSinceFire = tSinceFire) + 
-                             germ1stpop2(t = t, size = 1, x = n, caches2 = caches2, tSinceFire = tSinceFire) + 
-                             germ2ndpop1(t = t, size = 1, x = n, tSinceFire = tSinceFire) + 
-                             germ2ndpop2(t = t, size = 1, x = n, tSinceFire = tSinceFire) +
-                             dorm_1(t = t, caches1 = caches1, tSinceFire = tSinceFire) +
-                             dorm_2(t = t, caches2 = caches2, tSinceFire = tSinceFire)))  
-          
-          n <- as.matrix(pops[i,], nrow = length(pops[i,]), ncol = 1)
-          
-        } 
+        ## Update parameters drawn from distributions/samples that must remain constant during each year
+        cones <- No_cones(t = t, size = 1) *rcones(n, tSinceFire = tSinceFire)
         
-      }else if(fire == F){
-        ##############################################################################################################################################            
-        ##                                                          FIRE = FALSE                    
-        ############################################################################################################################################## 
+        caches1 <- No_caches_1_fire1
+        caches2 <- No_caches_2_fire1(cones = cones[2], t = t, size = 1, x = x)
+        
+        
+        pops[i,] <- c(t(x +
+                          germ1stpop2(t = t, size = 1, x = n, caches2 = caches2, tSinceFire = tSinceFire) +
+                          germ2ndpop2(t = t, size = 1, x = n, tSinceFire = tSinceFire) +
+                          dorm_2(t = t, caches2 = caches2, tSinceFire = tSinceFire)))
+        
+        n         <- as.matrix(pops[i,], nrow = length(pops[i,]), ncol = 1)
+        
+      } 
+      
+      ## 2) FIRE IN 2 BUT NOT 1
+      
+      if(fire_current[1] == F & fire_current[2] == T){                  
+        
+        tSinceFire <- c(tSinceFire[1], 0)
+        
+        tSinceFire_tracker[j*projection_time - (projection_time)+i,3:4] <- tSinceFire 
+        
+        
+        # Assuming stand replacing burn with no survival and no regeneration.
+        # Most fires go out with first snow. e.g., Romme 1982
+        mat      <- S_fire_2(tSinceFire, x = n, s1 = s1, t1= t1, s2 = s2)
+        
+        x <- mat %*% n
+        
+        cones <- No_cones(t = t, size = 1) *rcones(n, tSinceFire = tSinceFire)
+        
+        caches1 <- No_caches_1_fire2(cones_1 = cones[1], t = t, size = 1, x = n)
+        caches2 <- No_caches_2_fire2
+        
+        
+        pops[i,] <- c(t(x + 
+                          germ1stpop1(t = t, size = 1, x = n, caches1 = caches1, tSinceFire = tSinceFire) +
+                          germ2ndpop1(t = t, size = 1, x = n, tSinceFire = tSinceFire)+
+                          dorm_1(t = t, caches1 = caches1, tSinceFire = tSinceFire)))
+        
+        n         <- as.matrix(pops[i,], nrow = length(pops[i,]), ncol = 1)
+        
+      }
+      
+      ## 3) FIRE IN BOTH
+      
+      if(fire_current[1] == T & fire_current[2] == T){                  
+        
+        tSinceFire <- c(0, 0)
+        tSinceFire_tracker[j*projection_time - (projection_time)+i,3:4] <- tSinceFire
+        
+        cat(paste0("***Fire in both populations in iteration ", j, " year ",t,"***\n"))
+        
+        pops[i,] <- c(t(S_fire_both(s1 = s1, s2 = s2) %*% n))  # Defines the intermediate population size
+        
+        n         <- as.matrix(pops[i,], nrow = length(pops[i,]), ncol = 1)
+        
+      }
+      #--------------------------------------------------------------------------------------------------------------------------------------------              
+      #                                                 No fire in current year in either subpopulation
+      #--------------------------------------------------------------------------------------------------------------------------------------------              
+      else if(fire_current[1] == F & fire_current[2] == F){
         
         mat <- S(tSinceFire = tSinceFire, x = n, s1 = s1, s2 = s2, t1 = t1, t2 = t2)
         
@@ -935,23 +915,25 @@ project <- function(projection_time, n0, reps = 100, FRI_decrease = T, fire = T,
         caches1 <- No_caches_1_nofire(cones_1 = cones[1], cones_2 = cones[2],  t = t, size = 1, x = n, dispersal_prob = dispersal_prob)
         caches2 <- No_caches_2_nofire(cones_1 = cones[1], cones_2 = cones[2],  t = t, size = 1, x = n, dispersal_prob = dispersal_prob)
         
-        pops[i,] <- c(t(x + 
-                          germ1stpop1(t = t, size = 1, x = x, caches1 = caches1, tSinceFire = tSinceFire) + 
-                          germ1stpop2(t = t, size = 1, x = x, caches2 = caches2, tSinceFire = tSinceFire) +
-                          germ2ndpop1(t = t, size = 1, x = n, tSinceFire = tSinceFire) + 
-                          germ2ndpop2(t = t, size = 1, x = n, tSinceFire = tSinceFire) +
-                          dorm_1(t = t, caches1 = caches1, tSinceFire = tSinceFire) +
-                          dorm_2(t = t, caches2 = caches2, tSinceFire = tSinceFire)))  # Defines the intermediate population size
         
-        n <- as.matrix(pops[i,], nrow = length(pops[i,]), ncol = 1) 
-      }
+        pops[i,]  <- c(t(x + 
+                           germ1stpop1(t = t, size = 1, x = n, caches1 = caches1, tSinceFire = tSinceFire) + 
+                           germ1stpop2(t = t, size = 1, x = n, caches2 = caches2, tSinceFire = tSinceFire) + 
+                           germ2ndpop1(t = t, size = 1, x = n, tSinceFire = tSinceFire) + 
+                           germ2ndpop2(t = t, size = 1, x = n, tSinceFire = tSinceFire) +
+                           dorm_1(t = t, caches1 = caches1, tSinceFire = tSinceFire) +
+                           dorm_2(t = t, caches2 = caches2, tSinceFire = tSinceFire)))  
+        
+        n <- as.matrix(pops[i,], nrow = length(pops[i,]), ncol = 1)
+        
+      }  
       ############################################################################################################################################## 
       if(i == 1){
         lambda[j*projection_time - (projection_time) + i, 2:3] <- c(i, NA)
       }else if(i != 1){
         lambda[j*projection_time - (projection_time) + i, 2:3] <- c(i, sum(pops[i,])/sum(pops[i-1,]))
       }
-    }
+    }  # END i LOOP
     
     pops <- cbind(pops, rep(1:projection_time))  # Appends matrix to keep track of time during iteration
     results[, ,j] <- pops                        # Combines iterations into a j dimensional array

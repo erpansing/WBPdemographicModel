@@ -34,7 +34,7 @@ suppressMessages(library(tidyverse))
 #---------------------------------------|---------------------------------------
 ################################################################################
 
-proj_dir <- '/Users/elizabethpansing/Box Sync/PhD/Code/WBP Demographic Model Master/WBPdemographicModel/'
+proj_dir <- '/Users/elizabethpansing/Box/PhD/Code/WBP Demographic Model Master/WBPdemographicModel/'
 rda_dir <- "Rda/"
 data_dir <- "Data/"
 code_dir <- "Code/"

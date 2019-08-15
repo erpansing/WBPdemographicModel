@@ -145,21 +145,8 @@ query1 <- paste0("SELECT * ",
 dat <- dbGetQuery(conn = fia_db_conn, statement = query1)
 
 
-##_________________________________________
 
-# THIS WORKS (shitty method, but works)...
 
-fia_db_conn <- DBI::dbConnect("PostgreSQL", dbname = 'FIADB', host = 'localhost', port = '5432')
-
-treeDat <- dbGetQuery(conn = fia_db_conn, statement = "SELECT * FROM wy_tree WHERE spcd = '101'") 
-names(treeDat) <- paste0("tree.", names(treeDat))
-
-plotDat <- dbGetQuery(conn = fia_db_conn, statement = "SELECT cn, manual_db, manual_rmrs FROM wy_plot")
-names(plotDat) <- paste0("plot.", names(plotDat))
-
-dat <- merge(treeDat, plotDat, by.x="tree.plt_cn", by.y="plot.cn", all.x=TRUE)
-
-DBI::dbDisconnect(fia_db_conn)
 #-----------------------
 # LOCATION LEVEL
 #-----------------------
@@ -273,28 +260,7 @@ dbAddKey(conn, name = c("public","nests"), colname = "nestid", type = "primary")
 
 rm(list = setdiff(ls(), "WY_TREE"))
 
-pial <- WY_TREE %>% 
-  filter(., SPCD == 101) %>% # 101 is code for wbp
-  filter(., STATUSCD == 1) %>%  # want density of only living trees
-  mutate(., DBH_class = ifelse(DIA < 11, "MA", "SAP"))
 
-FIA_wbp_density <- pial %>% 
-  group_by(., INVYR, PLT_CN, SUBP, DBH_class) %>% 
-  tally() %>% 
-  ungroup() %>% 
-  mutate(., density = n/0.0167944542) %>% #subplot area = 1/24 of an acre or 0.0167944542 ha
-  group_by(PLT_CN, INVYR) %>% 
-  summarise_at(vars(density), funs(median)) %>% 
-  ungroup() %>% 
-  mutate(., no_per_pop = density * 1000)
-
-
-hist(FIA_wbp_density$no_per_pop)
-out <- data.frame(count = rlnorm(n = 5000, meanlog = mean(log(FIA_wbp_density$no_per_pop)), sdlog = sd(log(FIA_wbp_density$no_per_pop))))
-
-ggplot(data = FIA_wbp_density, aes(x = no_per_pop))+
-  geom_density(fill = "blue", alpha = 0.2)+
-  geom_density(data = out, aes(x = count), fill = "red", alpha = 0.2)
 
 
 

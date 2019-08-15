@@ -33,7 +33,7 @@ suppressMessages(library(tidyverse))
 #---------------------------------------|---------------------------------------
 ################################################################################
 
-proj_dir <- '/Users/elizabethpansing/Box Sync/PhD/Code/WBP Demographic Model Master/Dis_WBP_MODEL_ACTIVE/'
+proj_dir <- '/Users/elizabethpansing/Box/PhD/Code/WBP Demographic Model Master/Dis_WBP_MODEL_ACTIVE/'
 rda_dir <- "Rda/"
 code_dir <- "Code/"
 model_file <- "Pansing et al. MPM Model Final? Gamma fire.R"

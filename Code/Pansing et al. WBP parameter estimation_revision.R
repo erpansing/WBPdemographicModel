@@ -401,7 +401,7 @@ rm(FireIntervals, fire_gamma)
 ##                       Suppression                         ##
 ##-----------------------------------------------------------##
 
-mean_interval_suppression <- 2000
+mean_interval_suppression <- 1000
 (var_interval_suppression <- 750^2)
 
 

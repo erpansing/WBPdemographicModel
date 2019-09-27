@@ -13,8 +13,8 @@ library(maps)
 #---------------------------------------|---------------------------------------
 ################################################################################
 
-proj_dir <- '/Users/elizabethpansing/Box Sync/PhD/Code/WBP Demographic Model Master/Dis_WBP_MODEL_ACTIVE/'
-proj_dir_linux <- '/Users/elizabethpansing/Box\ Sync/PhD/Code/WBP Demographic Model Master/Dis_WBP_MODEL_ACTIVE/'
+proj_dir <- '/Users/elizabethpansing/Box/PhD/Code/WBP Demographic Model Master/Dis_WBP_MODEL_ACTIVE/'
+proj_dir_linux <- '/Users/elizabethpansing/Box/PhD/Code/WBP Demographic Model Master/Dis_WBP_MODEL_ACTIVE/'
 data_dir <- 'Data/'
 rda_dir <- "Rda/"
 code_dir <- "Code/"
@@ -40,16 +40,16 @@ strip_text_size = 20
 ################################################################################
 
 # Import wbp range map
-GDALinfo("/Users/elizabethpansing/Box Sync/References/WBP Range Maps/WBP_USdist_Apr2019/WBP_USdist_Apr20191.tif")
-wbp_range <- raster("/Users/elizabethpansing/Box Sync/References/WBP Range Maps/WBP_USdist_Apr2019/WBP_USdist_Apr20191.tif")
+GDALinfo("/Users/elizabethpansing/Box/References/WBP Range Maps/WBP_USdist_Apr2019/WBP_USdist_Apr20191.tif")
+wbp_range <- raster("/Users/elizabethpansing/Box/References/WBP Range Maps/WBP_USdist_Apr2019/WBP_USdist_Apr20191.tif")
 (wbp_crs <- crs(wbp_range))
 
 
 # crop to Greater Yellowstone Ecosystem (GYE) extent
-ynp <- rgdal::readOGR(dsn = paste0("/Users/elizabethpansing/Box Sync/PhD/Tibbs Surivival/", data_dir,geospatial_dir,"National_Park_Boundaries_GYE"),
+ynp <- rgdal::readOGR(dsn = paste0("/Users/elizabethpansing/Box/PhD/Tibbs Surivival/", data_dir,geospatial_dir,"National_Park_Boundaries_GYE"),
                       "National_Park_Boundaries_GYE") %>%
   sp::spTransform(., CRS("+proj=longlat +zone=12 ellps=WGS84"))
-gye_nf <- rgdal::readOGR(dsn = paste0("/Users/elizabethpansing/Box Sync/PhD/Tibbs Surivival/", data_dir,geospatial_dir,"National_Forest_Boundaries_GYE"),
+gye_nf <- rgdal::readOGR(dsn = paste0("/Users/elizabethpansing/Box/PhD/Tibbs Surivival/", data_dir,geospatial_dir,"National_Forest_Boundaries_GYE"),
                          "National_Forest_Boundaries_GYE") %>%
   sp::spTransform(., CRS("+proj=longlat +zone=12 ellps=WGS84"))
 gye <- rbind(ynp, gye_nf, makeUniqueIDs = TRUE)
@@ -84,7 +84,7 @@ plot(gye_wbp)
 # 2) deletes all files that are not fire severity maps
 # 3) loads all geotiffs into the global environment
 
-MTBS_dir <- "/Users/elizabethpansing/Documents/MTBS_RdNBR/"
+MTBS_rdnbr_dir <- "/Users/elizabethpansing/Documents/MTBS_RdNBR/"
 
 #---------------------------------------|---------------------------------------
 #        Unzip files and delete all files that are not fire severity maps 
@@ -94,67 +94,64 @@ MTBS_dir <- "/Users/elizabethpansing/Documents/MTBS_RdNBR/"
 # as the files have already been unzipped.
 
 #Extract file names
-states <- list.files(MTBS_dir)
+# 
+# files <- list.files(MTBS_rdnbr_dir)
+# 
+#   for(i in unique(files)){
+# 
+#     fire_files <- list.files(paste0(MTBS_rdnbr_dir, i, "/fire_level_tar_files"))
+# 
+#     for(j in unique(fire_files)){
+#       system(paste0("cd ", MTBS_rdnbr_dir, i,"/fire_level_tar_files && tar xvzf ", MTBS_rdnbr_dir, i,"/fire_level_tar_files/", j))
+#       files <- list.files(paste0(MTBS_rdnbr_dir, i,"/fire_level_tar_files"))
+#       if (sum(grepl(x = files, pattern = "_rdnbr.tif")) == 0){
+#         system(paste0("cd ",MTBS_rdnbr_dir, i,"/fire_level_tar_files && ls -1 | grep -v '.tar.gz' | xargs rm -f"))
+#       } else {system(paste0("mkdir ", MTBS_rdnbr_dir, i,"/", gsub(".tar.gz", "", j),
+#                     " && mkdir ",MTBS_rdnbr_dir,  i,"/", gsub(".tar.gz", "", j),"/shpfile && mkdir ",MTBS_rdnbr_dir, i,"/", gsub(".tar.gz", "", j),"/rdnbr",
+#                     " && mv ",MTBS_rdnbr_dir, i,"/fire_level_tar_files/*_rdnbr.tif ",MTBS_rdnbr_dir, i,"/",gsub(".tar.gz", "", j),"/rdnbr",
+#                     " && mv ",MTBS_rdnbr_dir, i,"/fire_level_tar_files/*_bndy.prj ", MTBS_rdnbr_dir, i,"/",gsub(".tar.gz", "", j),"/shpfile",
+#                     " && mv ",MTBS_rdnbr_dir, i,"/fire_level_tar_files/*_bndy.dbf ", MTBS_rdnbr_dir, i,"/",gsub(".tar.gz", "", j),"/shpfile",
+#                     " && mv ",MTBS_rdnbr_dir, i,"/fire_level_tar_files/*_bndy.sbn ", MTBS_rdnbr_dir, i,"/",gsub(".tar.gz", "", j),"/shpfile",
+#                     " && mv ",MTBS_rdnbr_dir, i,"/fire_level_tar_files/*_bndy.sbx ", MTBS_rdnbr_dir, i,"/",gsub(".tar.gz", "", j),"/shpfile",
+#                     " && mv ",MTBS_rdnbr_dir, i,"/fire_level_tar_files/*_bndy.shp ", MTBS_rdnbr_dir, i,"/",gsub(".tar.gz", "", j),"/shpfile",
+#                     " && mv ",MTBS_rdnbr_dir, i,"/fire_level_tar_files/*_bndy.shx ", MTBS_rdnbr_dir, i,"/",gsub(".tar.gz", "", j),"/shpfile"))
+#       }
+#     }
+#     system(paste0("rm -r ",MTBS_rdnbr_dir, i,"/fire_level_tar_files"))
+#   }
 
-for(h in states){
-  files <- list.files(paste0(MTBS_dir, h))
-
-  for(i in unique(files)){
-
-    fire_files <- list.files(paste0(MTBS_dir, h, "/", i, "/fire_level_tar_files"))
-
-    for(j in unique(fire_files)){
-      system(paste0("cd ", MTBS_dir,h,"/", i,"/fire_level_tar_files && tar xvzf ",MTBS_dir,h, "/", i,"/fire_level_tar_files/", j))
-      files <- list.files(paste0(MTBS_dir, h,"/", i,"/fire_level_tar_files"))
-      if (sum(grepl(x = files, pattern = "_rdnbr.tif")) == 0){
-        system(paste0("cd ",MTBS_dir,h,"/", i,"/fire_level_tar_files && ls -1 | grep -v '.tar.gz' | xargs rm -f"))
-      } else {system(paste0("mkdir " ,MTBS_dir, h,"/", i,"/", gsub(".tar.gz", "", j),
-                    " && mkdir ",MTBS_dir, h,"/", i,"/", gsub(".tar.gz", "", j),"/shpfile && mkdir ",MTBS_dir, h,"/", i,"/", gsub(".tar.gz", "", j),"/rdnbr",
-                    " && mv ",MTBS_dir, h,"/", i,"/fire_level_tar_files/*_rdnbr.tif ",MTBS_dir, h,"/", i,"/",gsub(".tar.gz", "", j),"/rdnbr",
-                    " && mv ",MTBS_dir, h,"/", i,"/fire_level_tar_files/*_bndy.prj ",MTBS_dir, h,"/", i,"/",gsub(".tar.gz", "", j),"/shpfile",
-                    " && mv ",MTBS_dir, h,"/", i,"/fire_level_tar_files/*_bndy.dbf ",MTBS_dir, h,"/", i,"/",gsub(".tar.gz", "", j),"/shpfile",
-                    " && mv ",MTBS_dir, h,"/", i,"/fire_level_tar_files/*_bndy.sbn ",MTBS_dir, h,"/", i,"/",gsub(".tar.gz", "", j),"/shpfile",
-                    " && mv ",MTBS_dir, h,"/", i,"/fire_level_tar_files/*_bndy.sbx ",MTBS_dir, h,"/", i,"/",gsub(".tar.gz", "", j),"/shpfile",
-                    " && mv ",MTBS_dir, h,"/", i,"/fire_level_tar_files/*_bndy.shp ",MTBS_dir, h,"/", i,"/",gsub(".tar.gz", "", j),"/shpfile",
-                    " && mv ",MTBS_dir, h,"/", i,"/fire_level_tar_files/*_bndy.shx ",MTBS_dir, h,"/", i,"/",gsub(".tar.gz", "", j),"/shpfile"))
-      }
-    }
-    system(paste0("rm -r ",MTBS_dir, h,"/", i,"/fire_level_tar_files"))
-  }
-}
 
 #---------------------------------------|---------------------------------------
 #                                Load all geotiffs 
 #---------------------------------------|---------------------------------------
 #Extract file names
-MTBS_dir <- "/Users/elizabethpansing/Documents/MTBS_rdnbr/"
-states <- list.files(MTBS_dir)
+MTBS_rdnbr_dir <- "/Users/elizabethpansing/Documents/MTBS_rdnbr/"
 
 #loop through fire directories and import all files ending in "_rrdnbr.tif"
 # these files provide Rrdnbr values for each pixel within the fire perimeter
 
-for(h in states){
-  files <- list.files(paste0(MTBS_dir,h))
-  for(i in files){
-    fires <- list.files(paste0(MTBS_dir,h,"/",i))
-    for(k in fires){
-      name <- paste0(h,"_", i,"_",k)
-      fire_bndy_file_name <- list.files(paste0(MTBS_dir, h, "/",i, "/", k,"/shpfile"))
-      out <- fire_bndy_file_name[grepl(fire_bndy_file_name, pattern = ".dbf")]
-      shp_file_name <- gsub(".dbf", "", x = out)
-      fire_directory <- paste0(MTBS_dir,h,"/",i,"/",k)
-      # import file boundary shapefile  
-      try(assign(paste0(name,"_boundary"), rgdal::readOGR(paste0(fire_directory,"/shpfile"), shp_file_name)), silent = FALSE)
-      # import rdnbr raster file
-      rdnbr_file <- list.files(paste0(fire_directory,"/rdnbr"))
-      try(assign(paste0(name,"_rdnbr"), raster::raster(paste0(fire_directory, "/rdnbr/", rdnbr_file))))
-    }
+files <- list.files(paste0(MTBS_rdnbr_dir))
+
+for(i in files){
+  fires <- list.files(paste0(MTBS_rdnbr_dir,i))
+  for(k in fires){
+    name <- paste0(i,"_",k)
+    fire_bndy_file_name <- list.files(paste0(MTBS_rdnbr_dir, i, "/", k,"/shpfile"))
+    out <- fire_bndy_file_name[grepl(fire_bndy_file_name, pattern = ".dbf")]
+    shp_file_name <- gsub(".dbf", "", x = out)
+    fire_directory <- paste0(MTBS_rdnbr_dir,i,"/",k)
+    # import file boundary shapefile  
+    try(assign(paste0(name,"_boundary"), rgdal::readOGR(paste0(fire_directory,"/shpfile"), shp_file_name)), silent = FALSE)
+    # import rdnbr raster file
+    rdnbr_file <- list.files(paste0(fire_directory,"/rdnbr"))
+    try(assign(paste0(name,"_rdnbr"), raster::raster(paste0(fire_directory, "/rdnbr/", rdnbr_file))))
   }
 }
 
+
 # Make sure there is a polygon and raster for each fire
 
-fires_genv <- grep("ID_|WY_|MT_",names(.GlobalEnv),value=TRUE)
+fires_genv <- grep("_id|_wy|_mt",names(.GlobalEnv),value=TRUE)
 fires_genv_generic <- gsub(pattern = "_rdnbr", replacement = "", x = fires_genv)
 fires_genv_generic <- gsub(pattern = "_boundary", replacement = "", x = fires_genv_generic)
 
@@ -163,10 +160,7 @@ fires_genv_generic <- data.frame(fire = fires_genv_generic, file = fires_genv)
 (missing <- fires_genv_generic %>% 
   group_by(fire) %>% 
   tally() %>% 
-  filter(., n > 2 | n < 2))
-
-fires_genv_generic %>% 
-  filter(., fire %in% missing$fire)
+  filter(., n != 2))
 
 ID_2000_id4217911557220000626_rdnbr <- raster("/Users/elizabethpansing/Documents/MTBS_RdNBR/ID/1998/id4275411271419980831/rdnbr/id4275411271419980831_19980810_19980911_rdnbr.tif")
 ID_2000_id4375011512820000815_boundary <- readOGR("/Users/elizabethpansing/Documents/MTBS_RdNBR/ID/2000/id4375011512820000815/shpfile")
@@ -204,13 +198,15 @@ identical(crs(wbp_range), crs(WY_1988_wy4470811082119880722_rdnbr))
 #    and low severity fire. RdNBR fire severity thresholds are those used by Miller & Thode 2007.
 #    We re-run the same analysis using the stand replacing threshold described by Harvey 2015.
 
-Pattern <- grep(".rdnbr",names(.GlobalEnv),value=TRUE)
+
+Pattern <- grep(".rdnbr", names(.GlobalEnv),value = TRUE)
 length(Pattern)
 sum(duplicated(Pattern))
 
 high <- NULL
 moderate <- NULL
 low <- NULL
+unburned <- NULL
 ID <- NULL
 
 for(i in Pattern){
@@ -222,45 +218,80 @@ for(i in Pattern){
     high[which(Pattern == i)] <- NA
     moderate[which(Pattern == i)] <- NA
     low[which(Pattern == i)] <- NA
+    unburned[which(Pattern == i)] <- NA
     ID[which(Pattern == i)] <- Pattern[i]
     cat(paste0("DONE.\n")) 
   } else if(isTRUE(class(new_projection) != "try-error")){
     # new_projection <- projectRaster(gye_wbp, fire)
     # cropped_range <- crop(new_projection, fire)
     masked_fire <- mask(fire, new_projection)
-    masked_fire[masked_fire < 69] <- NA  # Of the areas that burned, what proportion were low, moderate, severe. Not including unburned area within the perimeter
+    # masked_fire[masked_fire < 69] <- NA  # Of the areas that burned, what proportion were low, moderate, severe. Not including unburned area within the perimeter
     values_within_boundary <- extract(masked_fire, boundary)[[1]] # extract rdnbr values from pixels that lie within the fire perimeter
     prop_high <- sum(values_within_boundary > 641, na.rm = T)/sum(!is.na(values_within_boundary))
     prop_moderate <- sum(values_within_boundary >= 316 & values_within_boundary < 640, na.rm = T)/sum(!is.na(values_within_boundary))
     prop_low <- sum(values_within_boundary >= 69 & values_within_boundary < 315, na.rm = T)/sum(!is.na(values_within_boundary))
+    prop_unburned <- sum(values_within_boundary < 69, na.rm = T)/sum(!is.na(values_within_boundary))
     # prop_unchanged <- sum(values(masked_fire)< 69, na.rm = T)/sum(!is.na(values(masked_fire)))
     high[which(Pattern == i)] <- prop_high
     moderate[which(Pattern == i)] <- prop_moderate
     low[which(Pattern == i)] <- prop_low
+    unburned[which(Pattern == i)] <- prop_unburned
     ID[which(Pattern == i)] <- Pattern[i]
     cat(paste0("DONE.\n"))
   }
 }
 
 
-dat <- matrix(c(high, moderate, low), ncol = 3, byrow = F)
+dat <- matrix(c(high, moderate, low, unburned), ncol = 4, byrow = F)
 total <- apply(dat, MARGIN = 1, FUN = sum)
 range(total, na.rm = T)
 
-rdnbr_dat <- data.frame(id = Pattern, high = high, moderate = moderate, low = low) %>% 
+rdnbr_dat <- data.frame( High = high, Moderate = moderate, Low = low, Unburned = unburned) %>% 
   na.omit(.)
   
 rdnbr_dat_plot <- rdnbr_dat %>% 
-  gather(., severity, prop, -id)
+  gather(., severity, prop)
 
 save(rdnbr_dat, file = paste0(proj_dir, data_dir,"rdnbr_dat.Rds"))
 load(paste0(proj_dir, data_dir, "rdnbr_dat.Rds"))
 
-rdnbr_dat %>% 
+rdnbr_dat_plot %>% 
+  dplyr::mutate(., severity = factor(severity, levels = c("High", "Moderate", "Low", "Unburned"))) %>% 
   # filter(., severity == "high")%>% 
-  ggplot(aes(x = prop, col = severity, fill = severity))+
-  geom_density(alpha = 0.2, bins = 40)#+
-# facet_wrap(~severity, ncol = 1)
+  ggplot(aes(x = prop, col = severity, fill = severity, bins = 50))+
+  geom_density(alpha = 0.65)+
+  scale_fill_manual(values = c("#ca0020", "#f4a582","#92c5de","#0571b0")) +
+  scale_color_manual(values = c("#ca0020", "#f4a582","#92c5de","#0571b0")) +
+  theme_bw() +
+  labs(x = "Proportion", y = "Density")+
+  theme(axis.title = element_text(size = axis_title_size)) + 
+  theme(axis.text  = element_text(size = axis_text_size)) +
+  theme(legend.position = "none")+
+  # facet_grid(~severity) + 
+  ggplot2::theme(strip.background = ggplot2::element_rect(colour = "black", fill = "white"),
+                 strip.text       = ggplot2::element_text(colour = "black",  size = strip_text_size))+
+  ggplot2::theme(plot.margin = grid::unit(c(3, 1, 1, 1), "lines"))  # top, right, bottom, left
+
+legd <- grid::legendGrob(c("High","Moderate", "Low", "Unburned"),
+                         nrow          = 1,
+                         ncol          = 4,
+                         lines.first   = TRUE,
+                         hgap          = grid::unit(2, "lines"),
+                         vgap          = grid::unit(1, "lines"),
+                         default.units = "lines",
+                         pch           = 22,
+                         gp = grid::gpar(col      = rep("black",4),
+                                         fill     = c("#ca0020", "#f4a582","#92c5de","#0571b0"),
+                                         fontsize = axis_text_size,
+                                         fontface = "bold"),
+                         vp = grid::viewport(x    = 0,
+                                             y    = 0,
+                                             w    = 1.05,
+                                             h    = 1.94,
+                                             just = c("left", "bottom")))
+
+grid::grid.draw(legd)
+
 
 noNAdat_rdnbr <- na.omit(rdnbr_dat)
 

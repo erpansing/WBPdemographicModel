@@ -13,6 +13,12 @@
 #                   plots within sites were controls) and some were thinned.   # 
 #                   Plots have been monitored at various time points since.    #
 ################################################################################
+#TODO: WTF is sel?
+#TODO: WTF is conf?
+#TODO: Why are some values of burn "" whereas others are "unburned"?
+#TODO: What are the different fuels treatments (none, nutcracker, enhancement, treatment)
+#TODO: What are the different planting treatments?
+
 
 rm(list = ls())
 
@@ -48,43 +54,118 @@ export_table_dir <-  "Exported Data Tables/"
 #---------------------------------------|---------------------------------------
 ################################################################################
 
-KeaneLAI <- read.csv(paste0(proj_dir, "Data/LAI.csv"))
+lai <- read.csv(paste0(proj_dir, "Data/LAI.csv"))
 
-colnames(KeaneLAI) <- c("sa", "date", "plot", "subplot", "subsubplot", "vp", "lai", "sel", "conf", "notes")
-KeaneLAI <- KeaneLAI[,1:10]
-str(KeaneLAI)
+colnames(lai) <- c("sa", "date", "burn_date", "plot", "subplot", "subsubplot", "vp", "lai", "sel", "conf", "notes", "burn", "fuels", "planting")
+str(lai)
 
-KeaneLAI$date <- lubridate::ymd(as.character(KeaneLAI$date))
+lai$date <- lubridate::ymd(as.character(lai$date))
+lai <- lai %>% mutate(year = lubridate::year(date))
 #---------------------------------------|---------------------------------------
 #                        Explore to make sure data match design
 #---------------------------------------|---------------------------------------
 
-nrow(KeaneLAI)
+nrow(lai)
 
+length(unique(lai$sa)) # should be 6
+unique(lai$sa) 
+sum(is.na(lai$sa))
 
-length(unique(KeaneLAI$sa)) # should be 6
-unique(KeaneLAI$sa) 
+sum(lai$sa == "")
+lai %>% filter(., sa == "")
+which(lai$sa == "")
 
-sum(KeaneLAI$sa == "")
-KeaneLAI %>% filter(., sa == "")
-which(KeaneLAI$sa == "")
+lai <- lai %>% filter(., sa != "")
 
-KeaneLAI <- KeaneLAI %>% filter(., sa != "")
+nrow(lai)
+length(unique(lai$sa)) # should be 6
+unique(lai$sa) 
 
-nrow(KeaneLAI)
-length(unique(KeaneLAI$sa)) # should be 6
-unique(KeaneLAI$sa) 
+# B = table(lai$subplot, lai$plot, lai$sa)
 
-# B = Bear Beaver Ridge
-# C = Coyote Meadows
-# M = Musgrove Creek
+# C = *Coyote Meadows
+# M = *Musgrove Creek
 # R = 
-# S = Snowbowl?
+# S = *Smith Creek
+
+##
+
+range(lai$year)
+sum(is.na(lai$year))
+
+unique(lai$burn_date)
+sum(is.na(lai$burn_date))
+sum(is.na(lai$burn_date))/nrow(lai)
+
+unique(lai$plot)
+sum(is.na(lai$plot))
+
+unique(lai$subplot)
+sum(is.na(lai$subplot))
+
+unique(lai$subsubplot)
+sum(is.na(lai$subsubplot))
+
+unique(lai$vp)
+sum(is.na(lai$vp))
+
+unique(lai$sel)
+sum(is.na(lai$sel))
+
+unique(lai$conf)
+sum(is.na(lai$conf))
+
+unique(lai$notes)
+
+unique(lai$burn)
+sum(lai$burn == "")
+lai[which(lai$burn == ""),]
+sum(lai$burn == "" & is.na(lai$burn_date))/sum(lai$burn == "") # all entries with "" burn status have NA burn dates
+sum(lai$burn == "" & is.na(lai$burn_date))/sum(is.na(lai$burn_date)) # not all entries with NA burn dates have "" burn status
+lai[which(is.na(lai$burn_date) & !(lai$burn == "")),] # all have burn status == "unburned"
+
+
+unique(lai$fuels)
+# none, "", nutcracker, enhancement, treatment
+sum(is.na(lai$fuels))
+sum(lai$fuels == "")
+
+
+unique(lai$planting)
+sum(is.na(lai$planting))
+sum(lai$planting == "")
+
+table(lai[, c("burn")], useNA = "always")
+table(lai[, c("fuels")], useNA = "always")
+table(lai[, c("planting")], useNA = "always")
+
+
+sum(is.na(lai$burn) & is.na(lai$fuels))
+
+####################################################
+lai_first <- lai %>% 
+  dplyr::group_by(., sa) %>% 
+  dplyr::filter(., year == min(year)) %>% 
+  dplyr::ungroup()
+
+R <- lai %>% 
+  filter(., sa == "R")
+
+Rfirst <- lai_first %>% 
+  filter(., sa == 'R')
+
+table(Rfirst$subplot, Rfirst$plot)
+table(R$subplot, R$plot)
+
+table( R$fuels, R$planting, R$burn)
+
+table(lai[,c("burn","fuels", "planting")], useNA = "always")
+
 
 ## According to Keane & Parsons 2010, the plot and subplot (my own names) determine
 # the treatment. So creating a "treatment" variable that is a combination of plot and subplot
 
-KeaneLAI <- KeaneLAI %>% 
+lai <- lai %>% 
   mutate(., treatment = paste0(plot, subplot))
 
 
@@ -92,7 +173,7 @@ KeaneLAI <- KeaneLAI %>%
 
 ## Look at data 
 
-KeaneLAI %>% 
+lai %>% 
   filter(., sa == "B") %>% 
   group_by(., treatment, date) %>% 
   summarise_at(., vars(lai), funs(mean)) %>% 

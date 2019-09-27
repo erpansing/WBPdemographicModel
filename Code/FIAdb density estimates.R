@@ -92,8 +92,6 @@ wbp_subp <- subplotDat %>%
 #   mutate(., county_plot = paste(tree.countycd, tree.plot))
 # 
 # library(ggmap)
-# ggmap::register_google(key = "AIzaSyBfQw1TJQiMA_2VYAFCgPNfwRjXyNr0RHg",  # your Static Maps API key
-#                        account_type = "standard")
 # 
 # map <- ggmap::get_map(location = c(lon =  -109.79905 , lat = 43.69521),
 #                       maptype = "terrain", zoom = 8)

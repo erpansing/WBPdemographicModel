@@ -371,13 +371,26 @@ No_caches_2_fire2 <- 0
 
 
 rALS_sd   <- function(x, tSinceFire){
-  0.8/(1 + exp(4 * (LAI(x, tSinceFire) - 2.5))) + 0.2
+  # 0.8/(1 + exp(4 * (LAI(x, tSinceFire) - 2.5))) + 0.2
   # 0.7/(1 + exp(6   * (LAI(x, tSinceFire) - 2.5)))  + 0.3
+  # 0.75/(1 + exp(6 * (LAI(x, tSinceFire) - 2.5))) + 0.25 # Most recent run with counterintuitive results
+  
+  
+  #Troubleshooting
+  # 0.33333333 + (1/(1+0.7^(-(LAI(x, tSinceFire) -1)))) #OG Ecosphere function
+  # 0.25 + (1/(1+0.7^(-(LAI(x, tSinceFire) -1)))) #Change to only ralsSD 0.25
+  # 0.25 + (1/(1+0.7^(-(LAI(x, tSinceFire) -1)))) #Change both ralsSD & rals germ 0.25
+  # 0.2 + (1/(1+0.7^(-(LAI(x, tSinceFire) -1)))) #Change to only ralsSD 0.2
+  0.2 + (1/(1+0.7^(-(LAI(x, tSinceFire) -1)))) #Change both ralsSD and  0.2
 }
 
 
 rALS_germ     <- function(x, tSinceFire){
-  0.33333333 + (1/(1+0.7^(-(LAI(x, tSinceFire = tSinceFire)-1))))
+  # 0.33333333 + (1/(1+0.5^(-(LAI(x, tSinceFire = tSinceFire)-1)))) # OG Ecosphere function
+   # 0.33333333 + (1/(1+0.5^(-(LAI(x, tSinceFire = tSinceFire)-1)))) # Only changed ralsSD, this stays the same as previous
+  # 0.25 + (1/(1+0.5^(-(LAI(x, tSinceFire = tSinceFire)-1)))) #  changed ralsSD & ralsgerm to 0.25
+  # 0.25 + (1/(1+0.5^(-(LAI(x, tSinceFire = tSinceFire)-1)))) # Only changed ralsSD, this stays the same as previous
+   0.2 + (1/(1+0.5^(-(LAI(x, tSinceFire = tSinceFire)-1)))) #  changed ralsSD & ralsgerm to 0.25
 }
 
 rcones <- function(n, tSinceFire){
@@ -686,11 +699,27 @@ project <- function(projection_time, reps = 100, FRI_decrease = T, fire = T, dis
                           byrow = F, nrow = 6)
 
     } else if(fire == TRUE & FRI_decrease == TRUE){
-      var <- var_interval
+      
+      get_gammas <- function(mu, var){
+        alpha <- mu^2/var
+        theta <- var/mu
+        beta <- 1/theta
+        
+        result <- list(alpha = alpha, 
+                       theta = theta,
+                       beta = beta)
+        return(result)
+      }
+      
+      
+      var <- 29.5 # Clark et al. 2017 Ecosphere
 
+      
+      
       ########################
       # Decreasing FRI, pop 1
       #######################
+      
       fire_intervals1 <- NA
       first <- NA
       fire_years1 <- NA
@@ -706,11 +735,9 @@ project <- function(projection_time, reps = 100, FRI_decrease = T, fire = T, dis
           mu <- predict.glm(object = fit, newdata = year, type = "response")
 
           #reshape the gamma for random sampling values
-          fire_theta <- summary(fit)$dispersion
-          fire_alpha <- mu/fire_theta
-          fire_beta <- 1/fire_theta
+          gammas <- get_gammas(mu = mu, var = ifelse(year > 100, 29.5, 10370))
 
-          fire_intervals1[index] <- rgamma(1, fire_alpha, fire_beta)
+          fire_intervals1[index] <- rgamma(1, gammas$alpha, gammas$beta)
           fire_years1 <- cumsum(fire_intervals1)
           year$Year <- fire_intervals1[index]
           index <- index + 1
@@ -719,12 +746,9 @@ project <- function(projection_time, reps = 100, FRI_decrease = T, fire = T, dis
           mu <- predict.glm(object = fit, newdata = year, type = "response")
 
           #reshape the gamma for random sampling values
-          fire_theta <- summary(fit)$dispersion
-          fire_alpha <- mu/fire_theta
-          fire_beta <- 1/fire_theta
-
-          #sample from new gamma distribution
-          fire_intervals1[index] <- rgamma(1, fire_alpha, fire_beta)
+          gammas <- get_gammas(mu = mu, var = ifelse(year > 100, 29.5, 10370))
+          
+          fire_intervals1[index] <- rgamma(1, gammas$alpha, gammas$beta)
           #make a vector of the years fires occur
           fire_years1 <- cumsum(fire_intervals1)
           #set the year to the one we just sampled to calculate next interval
@@ -755,11 +779,9 @@ project <- function(projection_time, reps = 100, FRI_decrease = T, fire = T, dis
           mu <- predict.glm(object = fit, newdata = year, type = "response")
 
           #reshape the gamma for random sampling values
-          fire_theta <- summary(fit)$dispersion
-          fire_alpha <- mu/fire_theta
-          fire_beta <- 1/fire_theta
-
-          fire_intervals2[index] <- rgamma(1, fire_alpha, fire_beta)
+          gammas <- get_gammas(mu = mu, var = ifelse(year > 100, 29.5, 10370))
+          
+          fire_intervals2[index] <- rgamma(1, gammas$alpha, gammas$beta)
           fire_years2 <- cumsum(fire_intervals2)
           year$Year <- fire_intervals2[index]
           index <- index + 1
@@ -768,12 +790,9 @@ project <- function(projection_time, reps = 100, FRI_decrease = T, fire = T, dis
           mu <- predict.glm(object = fit, newdata = year, type = "response")
 
           #reshape the gamma for random sampling values
-          fire_theta <- summary(fit)$dispersion
-          fire_alpha <- mu/fire_theta
-          fire_beta <- 1/fire_theta
-
-          #sample from new gamma distribution
-          fire_intervals2[index] <- rgamma(1, fire_alpha, fire_beta)
+          gammas <- get_gammas(mu = mu, var = ifelse(year > 100, 29.5, 10370))
+          
+          fire_intervals2[index] <- rgamma(1, gammas$alpha, gammas$beta)
           #make a vector of the years fires occur
           fire_years2 <- cumsum(fire_intervals2)
           #set the year to the one we just sampled to calculate next interval

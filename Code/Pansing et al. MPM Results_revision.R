@@ -26,6 +26,7 @@ options(scipen = 999)
 ################################################################################
 
 suppressMessages(library(tidyverse))
+suppressMessages(library(data.table))
 
 ################################################################################
 #---------------------------------------|---------------------------------------
@@ -48,6 +49,109 @@ export_results_dir <-  "Exported Results Tables/"
 #---------------------------------------|---------------------------------------
 ################################################################################
 
+################################################################################
+#                        FUNCTION TO RESHAPE MODEL OUTPUT                      #
+
+reshapeModelOutput <- function(dataIn        = constant_high_distance_revision, 
+                               area          = 2000,
+                               fireScenario  = "Historical fire return interval",
+                               dispersalProb = "Low dispersal",
+                               period        = "Current",
+                               result        = "data.frame") {
+  
+  #-------------------------------------|-------------------------------------
+  #                      Establish tSinceFire data.table
+  
+  tSinceFire <- data.table::as.data.table(dataIn[["tSinceFire_tracker"]])
+  
+  #-------------------------------------|-------------------------------------
+  #                   Rename tSinceFire variables explicitly
+  
+  data.table::setnames(tSinceFire, old=c("V1","V2","V3","V4"), new=c("Iteration","t","tSinceFire1","tSinceFire2"))
+  
+  #-------------------------------------|-------------------------------------
+  #                    Preprocess tSinceFire data.table
+  
+  tSinceFire <- tSinceFire[,IterationTime:=paste(Iteration, t)] %>%
+    .[,.(tSinceFire1,tSinceFire2,IterationTime)]
+  
+  #-------------------------------------|-------------------------------------
+  #                      Establish popSizes data.table
+  
+  popSizes   <- data.table::as.data.table(dataIn[["pop_sizes"]])
+  
+  #-------------------------------------|-------------------------------------
+  #                 Create popSizes iteration time variable
+  
+  popSizes[,IterationTime:=paste(Iteration, t)]
+  
+  #-------------------------------------|-------------------------------------
+  #                   Remove seed popSizes variables
+  
+  popSizes[,c("SEED2_1","SEED2_2"):=NULL]
+  
+  #-------------------------------------|-------------------------------------
+  #                         Define pop sizes and densities
+  # Total tree population sizes
+  popSizes[,PopSize:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "_"])]
+  popSizes[,PopSize1:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "_1"])]
+  popSizes[,PopSize2:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "_2"])]
+  
+  # Mature tree population sizes
+  popSizes[,MaturePopSize:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "MA_"])]
+  popSizes[,MaturePopSize1:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "MA_1"])]
+  popSizes[,MaturePopSize2:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "MA_2"])]
+  
+  # Sapling tree population sizes
+  popSizes[,SaplingPopSize:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "SAP_"])]
+  popSizes[,SaplingPopSize1:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "SAP_1"])]
+  popSizes[,SaplingPopSize2:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "SAP_2"])]
+  
+  # Mature + sapling tree population sizes
+  popSizes[,SaplingMaturePopSize:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "MA_|SAP_"])]
+  popSizes[,SaplingMaturePopSize1:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "MA_1|SAP_1"])]
+  popSizes[,SaplingMaturePopSize2:=rowSums(popSizes[, .SD, .SDcols = names(popSizes) %like% "MA_2|SAP_2"])]
+  
+  # Total tree population densities
+  popSizes[,Density:=PopSize/area]
+  popSizes[,Density1:=PopSize1/(area/2)]
+  popSizes[,Density2:=PopSize2/(area/2)]
+  
+  # Mature tree population densities
+  popSizes[,MA_Density:=MaturePopSize/area]
+  popSizes[,MA_Density1:=MaturePopSize1/(area/2)]
+  popSizes[,MA_Density2:=MaturePopSize2/(area/2)]
+
+  # Sapling tree population densities
+  popSizes[,SAP_Density:=SaplingPopSize/area]
+  popSizes[,SAP_Density1:=SaplingPopSize1/(area/2)]
+  popSizes[,SAP_Density2:=SaplingPopSize2/(area/2)]
+  
+  # Mature + sapling tree population densities
+  popSizes[,SAP_MA_Density:=SaplingMaturePopSize/area]
+  popSizes[,SAP_MA_Density1:=SaplingMaturePopSize1/(area/2)]
+  popSizes[,SAP_MA_Density2:=SaplingMaturePopSize2/(area/2)]
+  #-------------------------------------|-------------------------------------
+  #                                   Label
+  popSizes[,Fire_scenario:=fireScenario]
+  popSizes[,Dispersal_probability:=dispersalProb]
+  popSizes[,Period:=period]
+  #-------------------------------------|-------------------------------------
+  #                            Define results
+  dataOut <- merge(popSizes, tSinceFire, by="IterationTime", all=TRUE) %>%
+    .[,t_burnin:=t] %>%
+    .[,t:=(t-10)] %>%
+    .[t>0,] %>% 
+    .[,IterationTime := paste(Iteration, t)]
+  #-------------------------------------|-------------------------------------
+  #                              Return results
+  if(result=="data.frame") { return(as.data.frame(dataOut)) }
+  if(result=="data.table") { return(dataOut) }
+
+}
+
+
+
 lower <- function(x){
   quantile(x, prob = 0.025)
 }
@@ -65,125 +169,14 @@ q3 <- function(x){
   quantile(x, prob = 0.75)
 }
 
+
+projection_time <- 500
 reps <- 5000
+area <- 2000
 
 axis_label_text_size <- 23
 strip_text_size <- 18
 axis_text_size <- 18
-
-# area <- 2000 # Area of 2000 ha total, 1000ha/population. Multiply by 10e3 to get m2
-
-################################################################################
-#---------------------------------------|---------------------------------------
-#                                   Load model 
-#---------------------------------------|---------------------------------------
-################################################################################
-# The sourced code is only required for the first model run. Otherwise skip to line 130
-
-# source(paste0(proj_dir, code_dir, model_file))
-
-
-################################################################################
-#---------------------------------------|---------------------------------------
-#                             Run Model Scenarios   
-#---------------------------------------|---------------------------------------
-################################################################################
-################################################################################
-
-# The following runs 6 projection scenarios for wbp: 3 fire
-# scenarios crossed with 2 dispersal probabilities
-#    1) Constant current fire return interval
-#       long distance between populations 
-#       (i.e., low dispersal probabiliy)
-#    2) Constant current fire return interval
-#       short distance between populations 
-#       (i.e., high dispersal probabiliy)
-#    3) Complete fire suppression
-#       long distance between populations 
-#       (i.e., low dispersal probabiliy)
-#    4) Complete fire suppression
-#       long distance between populations 
-#       (i.e., low dispersal probabiliy)
-#    5) Decreasing fire return interval
-#       long distance between populations 
-#       (i.e., low dispersal probabiliy)
-#    6) Decreasing fire return interval
-#       long distance between populations 
-#       (i.e., low dispersal probabiliy)
-#
-#
-#  ** Note: Lines 95-125 only need to be run initially. After initial run
-#           jump to line 1230
-
-projection_time <- 500
-reps <- 5000
-
-# # 1)
-start.time1 <- Sys.time()
-constant_high_distance_revision   <- project(projection_time = projection_time, reps = reps, FRI_decrease = FALSE,
-                                     fire = TRUE, dispersal_distance = "High", period = "Current")
-end.time1 <- Sys.time()
-
-save(constant_high_distance_revision, file = paste0(proj_dir, rda_dir, "Revision constant high distance.Rda"))
-
-#2)
-start.time2 <- Sys.time()
-constant_low_distance_revision    <- project(projection_time = projection_time,  reps = reps, FRI_decrease = FALSE,
-                                     fire = TRUE, dispersal_distance = "Low", period = "Current")
-end.time2 <- Sys.time()
-save(constant_low_distance_revision,  file = paste0(proj_dir, rda_dir, "Revision constant low distance.Rda"))
-
-#3)
-start.time3 <- Sys.time()
-suppression_high_distance_revision <- project(projection_time = projection_time,  reps = reps, FRI_decrease = FALSE,
-                                     fire = FALSE, dispersal_distance = "High", period = "Current")
-end.time3 <- Sys.time()
-save(suppression_high_distance_revision, file = paste0(proj_dir, rda_dir,"Revision suppression high distance.Rda"))
-
-#4)
-start.time4 <- Sys.time()
-suppression_low_distance_revision    <- project(projection_time = projection_time,  reps = reps, FRI_decrease = FALSE,
-                                     fire = FALSE, dispersal_distance = "Low", period = "Current")
-end.time4 <- Sys.time()
-save(suppression_low_distance_revision,  file = paste0(proj_dir, rda_dir, "Revision suppression low distance.Rda"))
-
-##5)
-start.time5 <- Sys.time()
-decrease_high_distance_revision      <- project(projection_time = projection_time,  reps = reps, FRI_decrease = TRUE,
-                                     fire = TRUE, dispersal_distance = "High", period = "Current")
-end.time5 <- Sys.time()
-save(decrease_high_distance_revision, file = paste0(proj_dir, rda_dir, "Revision decrease high distance.Rda"))
-
-#6)
-start.time6 <- Sys.time()
-decrease_low_distance_revision       <- project(projection_time = projection_time,  reps = reps, FRI_decrease = TRUE,
-                                     fire = TRUE, dispersal_distance = "Low", period = "Current")
-end.time6 <- Sys.time()
-save(decrease_low_distance_revision, file = paste0(proj_dir, rda_dir, "Revision decrease low distance.Rda"))
-
-# 7)
-start.time7 <- Sys.time()
-constant_high_distance_historic_revision  <- project(projection_time = projection_time, reps = reps, FRI_decrease = FALSE,
-                                          fire = TRUE, dispersal_distance = "High", period = "Historic")
-end.time7 <- Sys.time()
-save(constant_high_distance_historic_revision, file = paste0(proj_dir, rda_dir, "Revision constant high distance historical.Rda"))
-
-# 8)
-start.time8 <- Sys.time()
-constant_low_distance_historic_revision   <- project(projection_time = projection_time ,  reps = reps, FRI_decrease = FALSE,
-                                          fire = TRUE, dispersal_distance = "Low", period = "Historic")
-end.time8 <- Sys.time()
-save(constant_low_distance_historic_revision, file = paste0(proj_dir, rda_dir, "Revision constant low distance historical.Rda"))
-total.end <- Sys.time()
-
-cat(paste0("Model run began at ", start.time1, " and concluded at ", end.time1, "\n\n"))
-cat(paste0("Model run began at ", start.time2, " and concluded at ", end.time2, "\n\n"))
-cat(paste0("Model run began at ", start.time3, " and concluded at ", end.time3, "\n\n"))
-cat(paste0("Model run began at ", start.time4, " and concluded at ", end.time4, "\n\n"))
-cat(paste0("Model run began at ", start.time5, " and concluded at ", end.time5, "\n\n"))
-cat(paste0("Model run began at ", start.time6, " and concluded at ", end.time6, "\n\n"))
-cat(paste0("Model run began at ", start.time7, " and concluded at ", end.time7, "\n\n"))
-cat(paste0("Model run began at ", start.time8, " and concluded at ", end.time8, "\n\n"))
 
 
 ################################################################################
@@ -191,7 +184,6 @@ cat(paste0("Model run began at ", start.time8, " and concluded at ", end.time8, 
 #                            Load Model Output                        
 #---------------------------------------|---------------------------------------
 ################################################################################
-
 
 ## Scenario #1: Constant fire return interval, low distance
 
@@ -225,106 +217,122 @@ load(paste0(proj_dir, rda_dir, "Revision constant high distance historical.Rda")
 
 load(paste0(proj_dir, rda_dir, "Revision constant low distance historical.Rda"))
 
-
-area <- 2000
 ################################################################################
 #---------------------------------------|---------------------------------------
-#                                Look at trajectories  
+#                                Reshape model output  
 #---------------------------------------|---------------------------------------
 ################################################################################
+constant_high_distance_pop_size_total <- reshapeModelOutput(dataIn        = constant_high_distance_revision, 
+                                                            area          = 2000,
+                                                            fireScenario  = "Historical fire return interval",
+                                                            dispersalProb = "Low dispersal",
+                                                            period        = "Current",
+                                                            result        = "data.frame") 
 
-# 1) Constant High Distance
+constant_low_distance_pop_size_total <- reshapeModelOutput(dataIn         = constant_low_distance_revision, 
+                                                            area          = 2000,
+                                                            fireScenario  = "Historical fire return interval",
+                                                            dispersalProb = "High dispersal",
+                                                            period        = "Current",
+                                                            result        = "data.frame") 
+
+suppression_high_distance_pop_size_total <- reshapeModelOutput(dataIn       = suppression_high_distance_revision, 
+                                                              area          = 2000,
+                                                              fireScenario  = "Suppression",
+                                                              dispersalProb = "Low dispersal",
+                                                              period        = "Current",
+                                                              result        = "data.frame") 
+
+suppression_low_distance_pop_size_total <- reshapeModelOutput(dataIn        = suppression_low_distance_revision, 
+                                                              area          = 2000,
+                                                              fireScenario  = "Suppression",
+                                                              dispersalProb = "High dispersal",
+                                                              period        = "Current",
+                                                              result        = "data.frame") 
+
+decrease_high_distance_pop_size_total <- reshapeModelOutput(dataIn       = decrease_high_distance_revision, 
+                                                           area          = 2000,
+                                                           fireScenario  = "Decreasing fire return interval",
+                                                           dispersalProb = "Low dispersal",
+                                                           period        = "Current",
+                                                           result        = "data.frame") 
+
+decrease_low_distance_pop_size_total <- reshapeModelOutput(dataIn        = decrease_low_distance_revision, 
+                                                           area          = 2000,
+                                                           fireScenario  = "Decreasing fire return interval",
+                                                           dispersalProb = "High dispersal",
+                                                           period        = "Current",
+                                                           result        = "data.frame") 
+
+
+constant_high_distance_historical_pop_size_total <- reshapeModelOutput(dataIn       = constant_high_distance_historic_revision, 
+                                                                      area          = 2000,
+                                                                      fireScenario  = "Historical fire return interval",
+                                                                      dispersalProb = "Low dispersal",
+                                                                      period        = "Historical",
+                                                                      result        = "data.frame") 
+
+constant_low_distance_historical_pop_size_total <- reshapeModelOutput(dataIn       = constant_low_distance_historic_revision, 
+                                                                     area          = 2000,
+                                                                     fireScenario  = "Historical fire return interval",
+                                                                     dispersalProb = "High dispersal",
+                                                                     period        = "Historical",
+                                                                     result        = "data.frame")
+
+rm(constant_high_distance_revision)
+
+rm(constant_low_distance_revision)
+
+rm(suppression_high_distance_revision)
+
+rm(suppression_low_distance_revision)
+
+rm(decrease_high_distance_revision)
+
+rm(decrease_low_distance_revision)
+
+rm(constant_high_distance_historic_revision)
+
+rm(constant_low_distance_historic_revision)
+
 #---------------------------------------|---------------------------------------
-#                           Constant FRI, high distance 
+#                           Density as a function of 
+#                       time since fire. Current demographics
 #---------------------------------------|---------------------------------------
 
-constant_high_distance_pop_size_total <- constant_high_distance_revision$pop_sizes %>% 
-  dplyr::select(., -SEED2_1, - SEED2_2) %>% 
-  # Total population size across both populations, pop1 and pop2
-  dplyr::mutate(., PopSize               = rowSums(dplyr::select(., dplyr::contains("_")))) %>% 
-  dplyr::mutate(., PopSize1              = rowSums(dplyr::select(., dplyr::contains("_1")))) %>% 
-  dplyr::mutate(., PopSize2              = rowSums(dplyr::select(., dplyr::contains("_2")))) %>%
-  # No. mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MaturePopSize         = rowSums(dplyr::select(., dplyr::contains("MA_")))) %>% 
-  dplyr::mutate(., MaturePopSize1        = rowSums(dplyr::select(., dplyr::contains("MA_1")))) %>% 
-  dplyr::mutate(., MaturePopSize2        = rowSums(dplyr::select(., dplyr::contains("MA_2")))) %>% 
-  # No. saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingPopSize        = rowSums(dplyr::select(., dplyr::contains("SAP_")))) %>% 
-  dplyr::mutate(., SaplingPopSize1       = rowSums(dplyr::select(., dplyr::contains("SAP_1")))) %>% 
-  dplyr::mutate(., SaplingPopSize2       = rowSums(dplyr::select(., dplyr::contains("SAP_2")))) %>% 
-  # No. mature trees & saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingMaturePopSize  = rowSums(dplyr::select(., dplyr::matches("MA_|SAP_")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize1 = rowSums(dplyr::select(., dplyr::matches("MA_1|SAP_1")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize2 = rowSums(dplyr::select(., dplyr::matches("MA_2|SAP_2")))) %>% 
-  # Density of all individuals across both populations, pop1 and pop2
-  dplyr::mutate(., Density = PopSize/area)  %>% 
-  dplyr::mutate(., Density1 = PopSize1/(area/2))  %>% 
-  dplyr::mutate(., Density2 = PopSize2/(area/2))  %>% 
-  # Density of mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MA_Density = MaturePopSize/area) %>% 
-  dplyr::mutate(., MA_Density1 = MaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., MA_Density2 = MaturePopSize2/(area/2)) %>% 
-  # Density of saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_Density = SaplingPopSize/area) %>% 
-  dplyr::mutate(., SAP_Density1 = SaplingPopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_Density2 = SaplingPopSize2/(area/2)) %>% 
-  # Density of mature trees and saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_MA_Density = SaplingMaturePopSize/area) %>% 
-  dplyr::mutate(., SAP_MA_Density1 = SaplingMaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_MA_Density2 = SaplingMaturePopSize2/(area/2)) %>% 
-  dplyr::mutate(., Fire_scenario = "Historical fire return interval") %>% 
-  dplyr::mutate(., Dispersal_probability = "Low dispersal") %>% 
-  dplyr::mutate(., Period = "Current") %>%
-  dplyr::mutate(., IterationTime = paste(Iteration, t))
-
-tSinceFire <- as.data.frame(constant_high_distance_revision$tSinceFire_tracker)
-colnames(tSinceFire) <- c("Iteration", "t", "tSinceFire1", "tSinceFire2")
-tSinceFire <- tSinceFire %>% 
-  dplyr::mutate(., IterationTime = paste(Iteration, t)) %>% 
-  dplyr::select(., -Iteration, -t)
-
-constant_high_distance_pop_size_total <- dplyr::full_join(constant_high_distance_pop_size_total, tSinceFire, by = "IterationTime")%>% 
-  dplyr::mutate(., t_burnin = t) %>% 
-  dplyr::mutate(., t = t - 10) %>% 
-  dplyr::filter(., t > 0)
-
-pop1 <- constant_high_distance_pop_size_total %>% 
-  dplyr::select(., Iteration, dplyr::contains("1")) %>% 
-  dplyr::mutate(., Pop = "pop1")  %>% 
-  dplyr::mutate(., Dispersal_probability = "High")
-
-colnames(pop1) <- c("Iteration","CS", "SD", "SAP", "MA", "PopSize", "MaturePopSize", "SaplingPopSize", "SaplingMaturePopSize",
-                    "Density", "MA_Density", "SAP_Density", "SAP_MA_Density", "tSinceFire", "Pop", "Dispersal_probability")
-
-pop2 <- constant_high_distance_pop_size_total %>% 
-  dplyr::select(., Iteration, dplyr::contains("2")) %>% 
-  dplyr::mutate(., Pop = "pop2") %>% 
-  dplyr::mutate(., Dispersal_probability = "High")
-
-colnames(pop2) <- c("Iteration", "CS", "SD", "SAP", "MA", "PopSize", "MaturePopSize", "SaplingPopSize", "SaplingMaturePopSize",
-                    "Density", "MA_Density", "SAP_Density", "SAP_MA_Density", "tSinceFire", "Pop", "Dispersal_probability")
-
-pops <- dplyr::bind_rows( pop1, pop2)
-
-rm(pop1, pop2)
-
-density_tSinceFire <- pops %>% 
-  dplyr::group_by(., tSinceFire, Dispersal_probability) %>% 
-  dplyr::summarise_at(., dplyr::vars(MA_Density, SAP_MA_Density, Density), 
-               list(mean = mean, median = median, min = min, 
-                    lower = lower, q1 = q1, q3 = q3, upper = upper, max = max)) %>% 
-  dplyr::ungroup() 
-
-
+# pop1 <- constant_high_distance_pop_size_total %>% 
+#   dplyr::select(., Iteration, dplyr::contains("1")) %>% 
+#   dplyr::mutate(., Pop = "pop1")  %>% 
+#   dplyr::mutate(., Dispersal_probability = "High")
+# 
+# colnames(pop1) <- c("Iteration","CS", "SD", "SAP", "MA", "PopSize", "MaturePopSize", "SaplingPopSize", "SaplingMaturePopSize",
+#                     "Density", "MA_Density", "SAP_Density", "SAP_MA_Density", "tSinceFire", "Pop", "Dispersal_probability")
+# 
+# pop2 <- constant_high_distance_pop_size_total %>% 
+#   dplyr::select(., Iteration, dplyr::contains("2")) %>% 
+#   dplyr::mutate(., Pop = "pop2") %>% 
+#   dplyr::mutate(., Dispersal_probability = "High")
+# 
+# colnames(pop2) <- c("Iteration", "CS", "SD", "SAP", "MA", "PopSize", "MaturePopSize", "SaplingPopSize", "SaplingMaturePopSize",
+#                     "Density", "MA_Density", "SAP_Density", "SAP_MA_Density", "tSinceFire", "Pop", "Dispersal_probability")
+# 
+# pops <- dplyr::bind_rows( pop1, pop2)
+# 
+# rm(pop1, pop2)
+# 
+# density_tSinceFire <- pops %>% 
+#   dplyr::group_by(., tSinceFire, Dispersal_probability) %>% 
+#   dplyr::summarise_at(., dplyr::vars(MA_Density, SAP_MA_Density, Density), 
+#                list(mean = mean, median = median, min = min, 
+#                     lower = lower, q1 = q1, q3 = q3, upper = upper, max = max)) %>% 
+#   dplyr::ungroup() 
+# 
 # tiff(filename = paste0(proj_dir, figures_dir, "Final SAP MA density by tSinceFire.tiff"),
 #      width = 12,
 #      height = 8.5,
 #      units = "in",
 #      res = 300,
 #      compression = "lzw")
-
-
-
 # ggplot2::ggplot(data = density_tSinceFire, 
 #                 ggplot2::aes(x = tSinceFire, y = SAP_MA_Density_median)) +
 #   ggplot2::geom_ribbon(data = density_tSinceFire, 
@@ -340,725 +348,24 @@ density_tSinceFire <- pops %>%
 
 # dev.off()
 
-rm(constant_high_distance_revision)
-
-density_constant_high_ditance_revision <- constant_high_distance_pop_size_total %>%
-  dplyr::select(., Iteration, t, Density, Density1, Density2,
-                MA_Density, MA_Density1, MA_Density2,
-                SAP_Density, SAP_Density1, SAP_Density2,
-                SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2) %>%
-  tidyr::gather(., LifeStage_pop, Density, -Iteration, -t)
-# 
-# 
-# density_constant_high_ditance_revision %>%
-#   # dplyr::filter(., t < 20) %>%
-#   dplyr::filter(., Iteration %in% sample(1:5000, 100, replace = F)) %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = Density, col = Iteration))+
-#   ggplot2::geom_line()+
-#   ggplot2::theme(legend.position = "none") +
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)
-# 
-# 
-# summary_constant_high_distance_density_by_t <- density_constant_high_distance %>%
-#   dplyr::group_by(., t, LifeStage_pop) %>%
-#   dplyr::summarise_at(., dplyr::vars(Density), dplyr::funs(mean, median, min, max)) %>%
-#   dplyr::ungroup()
-# 
-# summary_constant_high_distance_density_by_t %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = median))+
-#   ggplot2::geom_line()+
-#   ggplot2::geom_ribbon(ggplot2::aes(x = t, ymin = min, ymax = max), alpha = 0.5) +
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)
-# 
-# 
-# (summary_constant_high_distance_density <- summary_constant_high_distance_density_by_t %>%
-#     dplyr::group_by(., LifeStage_pop) %>%
-#     dplyr::summarise_at(., dplyr::vars(mean, median), dplyr::funs(mean)) %>%
-#     dplyr::ungroup())
-# 
-# write.csv(summary_constant_high_distance_density, 
-#           file = paste0(proj_dir, export_table_dir, "constant high no restoration density.csv"))
-# 
-# rm(summary_constant_high_distance_density_by_t, summary_constant_high_distance_density, density_constant_high_distance)
-
-# constant_high_distance_pop_size_total <- constant_high_distance_pop_size_total %>% 
-# dplyr::select(., Iteration, t, Density) #, Density1, Density2, SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2)
-
-
-# 2) Constant Low Distance
+################################################################################
 #---------------------------------------|---------------------------------------
-#                         Constant FRI, low distance                   
+#                               Create Figures                  
 #---------------------------------------|---------------------------------------
-
-constant_low_distance_pop_size_total <- constant_low_distance_revision$pop_sizes %>% 
-  dplyr::select(., -SEED2_1, - SEED2_2) %>% 
-  # Total population size across both populations, pop1 and pop2
-  dplyr::mutate(., PopSize               = rowSums(dplyr::select(., dplyr::contains("_")))) %>% 
-  dplyr::mutate(., PopSize1              = rowSums(dplyr::select(., dplyr::contains("_1")))) %>% 
-  dplyr::mutate(., PopSize2              = rowSums(dplyr::select(., dplyr::contains("_2")))) %>%
-  # No. mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MaturePopSize         = rowSums(dplyr::select(., dplyr::contains("MA_")))) %>% 
-  dplyr::mutate(., MaturePopSize1        = rowSums(dplyr::select(., dplyr::contains("MA_1")))) %>% 
-  dplyr::mutate(., MaturePopSize2        = rowSums(dplyr::select(., dplyr::contains("MA_2")))) %>% 
-  # No. saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingPopSize        = rowSums(dplyr::select(., dplyr::contains("SAP_")))) %>% 
-  dplyr::mutate(., SaplingPopSize1       = rowSums(dplyr::select(., dplyr::contains("SAP_1")))) %>% 
-  dplyr::mutate(., SaplingPopSize2       = rowSums(dplyr::select(., dplyr::contains("SAP_2")))) %>% 
-  # No. mature trees & saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingMaturePopSize  = rowSums(dplyr::select(., dplyr::matches("MA_|SAP_")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize1 = rowSums(dplyr::select(., dplyr::matches("MA_1|SAP_1")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize2 = rowSums(dplyr::select(., dplyr::matches("MA_2|SAP_2")))) %>% 
-  # Density of all individuals across both populations, pop1 and pop2
-  dplyr::mutate(., Density = PopSize/area)  %>% 
-  dplyr::mutate(., Density1 = PopSize1/(area/2))  %>% 
-  dplyr::mutate(., Density2 = PopSize2/(area/2))  %>% 
-  # Density of mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MA_Density = MaturePopSize/area) %>% 
-  dplyr::mutate(., MA_Density1 = MaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., MA_Density2 = MaturePopSize2/(area/2)) %>% 
-  # Density of saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_Density = SaplingPopSize/area) %>% 
-  dplyr::mutate(., SAP_Density1 = SaplingPopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_Density2 = SaplingPopSize2/(area/2)) %>% 
-  # Density of mature trees and saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_MA_Density = SaplingMaturePopSize/area) %>% 
-  dplyr::mutate(., SAP_MA_Density1 = SaplingMaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_MA_Density2 = SaplingMaturePopSize2/(area/2)) %>% 
-  dplyr::mutate(., Fire_scenario = "Historical fire return interval") %>% 
-  dplyr::mutate(., Dispersal_probability = "High dispersal") %>% 
-  dplyr::mutate(., Period = "Current") %>%
-  dplyr::mutate(., IterationTime = paste(Iteration, t))
-
-tSinceFire <- as.data.frame(constant_low_distance_revision$tSinceFire_tracker)
-colnames(tSinceFire) <- c("Iteration", "t", "tSinceFire1", "tSinceFire2")
-tSinceFire <- tSinceFire %>% 
-  dplyr::mutate(., IterationTime = paste(Iteration, t)) %>% 
-  dplyr::select(., -Iteration, - t)
-
-constant_low_distance_pop_size_total <- dplyr::full_join(constant_low_distance_pop_size_total, tSinceFire, by = "IterationTime")
-
-
-rm(constant_low_distance_revision)
-
-density_constant_low_distance_revision <- constant_low_distance_pop_size_total %>%
-  dplyr::select(., Iteration, t, Density, Density1, Density2,
-                MA_Density, MA_Density1, MA_Density2,
-                SAP_Density, SAP_Density1, SAP_Density2,
-                SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2) %>%
-  tidyr::gather(., LifeStage_pop, Density, -Iteration, -t)
-
-
-# density_constant_low_distance_revision %>%
-#   # dplyr::filter(., t < 20) %>%
-#   dplyr::filter(., Iteration %in% sample(1:5000, 100, replace = F)) %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = Density, col = Iteration))+
-#   ggplot2::geom_line()+
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)+
-#   ggplot2::theme(legend.position = "none")
-# 
-# 
-# summary_constant_low_distance_density_by_t <- density_constant_low_distance %>%
-#   dplyr::group_by(., t, LifeStage_pop) %>%
-#   dplyr::summarise_at(., vars(Density), vars(mean, median, min, max)) %>%
-#   dplyr::ungroup()
-# 
-# summary_constant_low_distance_density_by_t %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = median))+
-#   ggplot2::geom_line()+
-#   ggplot2::geom_ribbon(ggplot2::aes(x = t, ymin = min, ymax = max), alpha = 0.5) +
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)
-# 
-# (summary_constant_low_distance_density <- summary_constant_low_distance_density_by_t %>%
-#     dplyr::group_by(., LifeStage_pop) %>%
-#     dplyr::summarise_at(., dplyr::vars(mean, median), dplyr::funs(mean)) %>%
-#     dplyr::ungroup())
-# 
-# write.csv(summary_constant_low_distance_density, 
-#           file = paste0(proj_dir, export_table_dir, "constant low no restoration density.csv"))
-# 
-# rm(summary_constant_low_distance_density_by_t, summary_constant_low_distance_density, density_constant_low_distance)
-
-# constant_low_distance_pop_size_total <- constant_low_distance_pop_size_total %>% 
-#   dplyr::select(., Iteration, t, Density) #, Density1, Density2, SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2)
-
-# 3) Suppression High Distance
-#---------------------------------------|---------------------------------------
-#                          Suppression FRI, high distance                   
-#---------------------------------------|---------------------------------------
-
-suppression_high_distance_pop_size_total <- suppression_high_distance_revision$pop_sizes %>% 
-  dplyr::select(., -SEED2_1, - SEED2_2) %>% 
-  # Total population size across both populations, pop1 and pop2
-  dplyr::mutate(., PopSize               = rowSums(dplyr::select(., dplyr::contains("_")))) %>% 
-  dplyr::mutate(., PopSize1              = rowSums(dplyr::select(., dplyr::contains("_1")))) %>% 
-  dplyr::mutate(., PopSize2              = rowSums(dplyr::select(., dplyr::contains("_2")))) %>%
-  # No. mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MaturePopSize         = rowSums(dplyr::select(., dplyr::contains("MA_")))) %>% 
-  dplyr::mutate(., MaturePopSize1        = rowSums(dplyr::select(., dplyr::contains("MA_1")))) %>% 
-  dplyr::mutate(., MaturePopSize2        = rowSums(dplyr::select(., dplyr::contains("MA_2")))) %>% 
-  # No. saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingPopSize        = rowSums(dplyr::select(., dplyr::contains("SAP_")))) %>% 
-  dplyr::mutate(., SaplingPopSize1       = rowSums(dplyr::select(., dplyr::contains("SAP_1")))) %>% 
-  dplyr::mutate(., SaplingPopSize2       = rowSums(dplyr::select(., dplyr::contains("SAP_2")))) %>% 
-  # No. mature trees & saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingMaturePopSize  = rowSums(dplyr::select(., dplyr::matches("MA_|SAP_")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize1 = rowSums(dplyr::select(., dplyr::matches("MA_1|SAP_1")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize2 = rowSums(dplyr::select(., dplyr::matches("MA_2|SAP_2")))) %>% 
-  # Density of all individuals across both populations, pop1 and pop2
-  dplyr::mutate(., Density = PopSize/area)  %>% 
-  dplyr::mutate(., Density1 = PopSize1/(area/2))  %>% 
-  dplyr::mutate(., Density2 = PopSize2/(area/2))  %>% 
-  # Density of mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MA_Density = MaturePopSize/area) %>% 
-  dplyr::mutate(., MA_Density1 = MaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., MA_Density2 = MaturePopSize2/(area/2)) %>% 
-  # Density of saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_Density = SaplingPopSize/area) %>% 
-  dplyr::mutate(., SAP_Density1 = SaplingPopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_Density2 = SaplingPopSize2/(area/2)) %>% 
-  # Density of mature trees and saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_MA_Density = SaplingMaturePopSize/area) %>% 
-  dplyr::mutate(., SAP_MA_Density1 = SaplingMaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_MA_Density2 = SaplingMaturePopSize2/(area/2)) %>% 
-  dplyr::mutate(., Fire_scenario = "Suppression") %>% 
-  dplyr::mutate(., Dispersal_probability = "Low dispersal") %>% 
-  dplyr::mutate(., Period = "Current") %>%
-  dplyr::mutate(., IterationTime = paste(Iteration, t))
-
-tSinceFire <- as.data.frame(suppression_high_distance_revision$tSinceFire_tracker)
-colnames(tSinceFire) <- c("Iteration", "t", "tSinceFire1", "tSinceFire2")
-tSinceFire <- tSinceFire %>% 
-  dplyr::mutate(., IterationTime = paste(Iteration, t)) %>% 
-  dplyr::select(., -Iteration, - t)
-
-suppression_high_distance_pop_size_total <- dplyr::full_join(suppression_high_distance_pop_size_total, tSinceFire, by = "IterationTime")
-
-
-rm(suppression_high_distance_revision)
-
-density_suppression_high_ditance_revision <- suppression_high_distance_pop_size_total %>%
-  dplyr::select(., Iteration, t, Density, Density1, Density2,
-                MA_Density, MA_Density1, MA_Density2,
-                SAP_Density, SAP_Density1, SAP_Density2,
-                SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2) %>%
-  tidyr::gather(., LifeStage_pop, Density, -Iteration, -t)
-
-
-# density_suppression_high_ditance_revision %>%
-#   # dplyr::filter(., t < 20) %>%
-#   dplyr::filter(., Iteration %in% sample(1:5000, 100, replace = F)) %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = Density, col = Iteration))+
-#   ggplot2::geom_line()+
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)+
-#   ggplot2::theme(legend.position = "none")
-# 
-# 
-# summary_suppression_high_distance_density_by_t <- density_suppression_high_distance %>%
-#   dplyr::group_by(., t, LifeStage_pop) %>%
-#   dplyr::summarise_at(., dplyr::vars(Density), dplyr::funs(mean, median, min, max)) %>%
-#   dplyr::ungroup()
-# 
-# summary_suppression_high_distance_density_by_t %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = median))+
-#   ggplot2::geom_line()+
-#   ggplot2::geom_ribbon(ggplot2::aes(x = t, ymin = min, ymax = max), alpha = 0.5) +
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)
-# 
-# 
-# (summary_suppression_high_distance_density <- summary_suppression_high_distance_density_by_t %>%
-#     dplyr::group_by(., LifeStage_pop) %>%
-#     dplyr::summarise_at(., dplyr::vars(mean, median), dplyr::funs(mean)) %>%
-#     dplyr::ungroup())
-# 
-# write.csv(summary_suppression_high_distance_density, 
-#           file = paste0(proj_dir, export_table_dir, "suppression high no restoration density.csv"))
-# 
-# rm(summary_suppression_high_distance_density_by_t, summary_suppression_high_distance_density, density_suppression_high_distance)
-
-# suppression_high_distance_pop_size_total <- suppression_high_distance_pop_size_total %>% 
-#   dplyr::select(., Iteration, t, Density) #, Density1, Density2, SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2)
-
-
-# 4) Suppression Low Distance
-#---------------------------------------|---------------------------------------
-#                          Suppression FRI, low distance                   
-#---------------------------------------|---------------------------------------
-
-suppression_low_distance_pop_size_total <- suppression_low_distance_revision$pop_sizes %>% 
-  dplyr::select(., -SEED2_1, - SEED2_2) %>% 
-  # Total population size across both populations, pop1 and pop2
-  dplyr::mutate(., PopSize               = rowSums(dplyr::select(., dplyr::contains("_")))) %>% 
-  dplyr::mutate(., PopSize1              = rowSums(dplyr::select(., dplyr::contains("_1")))) %>% 
-  dplyr::mutate(., PopSize2              = rowSums(dplyr::select(., dplyr::contains("_2")))) %>%
-  # No. mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MaturePopSize         = rowSums(dplyr::select(., dplyr::contains("MA_")))) %>% 
-  dplyr::mutate(., MaturePopSize1        = rowSums(dplyr::select(., dplyr::contains("MA_1")))) %>% 
-  dplyr::mutate(., MaturePopSize2        = rowSums(dplyr::select(., dplyr::contains("MA_2")))) %>% 
-  # No. saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingPopSize        = rowSums(dplyr::select(., dplyr::contains("SAP_")))) %>% 
-  dplyr::mutate(., SaplingPopSize1       = rowSums(dplyr::select(., dplyr::contains("SAP_1")))) %>% 
-  dplyr::mutate(., SaplingPopSize2       = rowSums(dplyr::select(., dplyr::contains("SAP_2")))) %>% 
-  # No. mature trees & saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingMaturePopSize  = rowSums(dplyr::select(., dplyr::matches("MA_|SAP_")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize1 = rowSums(dplyr::select(., dplyr::matches("MA_1|SAP_1")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize2 = rowSums(dplyr::select(., dplyr::matches("MA_2|SAP_2")))) %>% 
-  # Density of all individuals across both populations, pop1 and pop2
-  dplyr::mutate(., Density = PopSize/area)  %>% 
-  dplyr::mutate(., Density1 = PopSize1/(area/2))  %>% 
-  dplyr::mutate(., Density2 = PopSize2/(area/2))  %>% 
-  # Density of mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MA_Density = MaturePopSize/area) %>% 
-  dplyr::mutate(., MA_Density1 = MaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., MA_Density2 = MaturePopSize2/(area/2)) %>% 
-  # Density of saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_Density = SaplingPopSize/area) %>% 
-  dplyr::mutate(., SAP_Density1 = SaplingPopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_Density2 = SaplingPopSize2/(area/2)) %>% 
-  # Density of mature trees and saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_MA_Density = SaplingMaturePopSize/area) %>% 
-  dplyr::mutate(., SAP_MA_Density1 = SaplingMaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_MA_Density2 = SaplingMaturePopSize2/(area/2)) %>% 
-  dplyr::mutate(., Fire_scenario = "Suppression") %>% 
-  dplyr::mutate(., Dispersal_probability = "High dispersal") %>% 
-  dplyr::mutate(., Period = "Current") %>%
-  dplyr::mutate(., IterationTime = paste(Iteration, t))
-
-tSinceFire <- as.data.frame(suppression_low_distance_revision$tSinceFire_tracker)
-colnames(tSinceFire) <- c("Iteration", "t", "tSinceFire1", "tSinceFire2")
-tSinceFire <- tSinceFire %>% 
-  dplyr::mutate(., IterationTime = paste(Iteration, t)) %>% 
-  dplyr::select(., -Iteration, - t)
-
-suppression_low_distance_pop_size_total <- dplyr::full_join(suppression_low_distance_pop_size_total, tSinceFire, by = "IterationTime")
-
-rm(suppression_low_distance_revision)
-
-density_suppression_low_distance_revision <- suppression_low_distance_pop_size_total %>%
-  dplyr::select(., Iteration, t, Density, Density1, Density2,
-                MA_Density, MA_Density1, MA_Density2,
-                SAP_Density, SAP_Density1, SAP_Density2,
-                SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2) %>%
-  tidyr::gather(., LifeStage_pop, Density, -Iteration, -t)
-
-
-# density_suppression_low_distance_revision %>%
-#   # dplyr::filter(., t < 20) %>%
-#   dplyr::filter(., Iteration %in% sample(1:5000, 100, replace = F)) %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = Density, col = Iteration))+
-#   ggplot2::geom_line()+
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)+
-#   ggplot2::theme(legend.position = "none")
-# 
-# 
-# summary_suppression_low_distance_density_by_t <- density_suppression_low_distance %>%
-#   group_by(., t, LifeStage_pop) %>%
-#   summarise_at(., vars(Density), vars(mean, median, min, max)) %>%
-#   ungroup()
-# 
-# summary_suppression_low_distance_density_by_t %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = median))+
-#   ggplot2::geom_line()+
-#   ggplot2::geom_ribbon(ggplot2::aes(x = t, ymin = min, ymax = max), alpha = 0.5) +
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)
-# 
-# 
-# (summary_suppression_low_distance_density <- summary_suppression_low_distance_density_by_t %>%
-#     dplyr::group_by(., LifeStage_pop) %>%
-#     dplyr::summarise_at(., dplyr::vars(mean, median), dplyr::funs(mean)) %>%
-#     dplyr::ungroup())
-# 
-# write.csv(summary_suppression_low_distance_density, 
-#           file = paste0(proj_dir, export_table_dir, "suppression low no restoration density.csv"))
-# 
-# rm(summary_suppression_low_distance_density_by_t, summary_suppression_low_distance_density, density_suppression_low_distance)
-
-# suppression_low_distance_pop_size_total <- suppression_low_distance_pop_size_total %>% 
-#   dplyr::select(., Iteration, t, Density) #, Density1, Density2, SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2)
-
-
-# 5) Decreasing High Distance
-#---------------------------------------|---------------------------------------
-#                          Decreasing FRI, high distance                   
-#---------------------------------------|---------------------------------------
-
-decrease_high_distance_pop_size_total <- decrease_high_distance_revision$pop_sizes %>% 
-  dplyr::select(., -SEED2_1, - SEED2_2) %>% 
-  # Total population size across both populations, pop1 and pop2
-  dplyr::mutate(., PopSize               = rowSums(dplyr::select(., dplyr::contains("_")))) %>% 
-  dplyr::mutate(., PopSize1              = rowSums(dplyr::select(., dplyr::contains("_1")))) %>% 
-  dplyr::mutate(., PopSize2              = rowSums(dplyr::select(., dplyr::contains("_2")))) %>%
-  # No. mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MaturePopSize         = rowSums(dplyr::select(., dplyr::contains("MA_")))) %>% 
-  dplyr::mutate(., MaturePopSize1        = rowSums(dplyr::select(., dplyr::contains("MA_1")))) %>% 
-  dplyr::mutate(., MaturePopSize2        = rowSums(dplyr::select(., dplyr::contains("MA_2")))) %>% 
-  # No. saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingPopSize        = rowSums(dplyr::select(., dplyr::contains("SAP_")))) %>% 
-  dplyr::mutate(., SaplingPopSize1       = rowSums(dplyr::select(., dplyr::contains("SAP_1")))) %>% 
-  dplyr::mutate(., SaplingPopSize2       = rowSums(dplyr::select(., dplyr::contains("SAP_2")))) %>% 
-  # No. mature trees & saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingMaturePopSize  = rowSums(dplyr::select(., dplyr::matches("MA_|SAP_")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize1 = rowSums(dplyr::select(., dplyr::matches("MA_1|SAP_1")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize2 = rowSums(dplyr::select(., dplyr::matches("MA_2|SAP_2")))) %>% 
-  # Density of all individuals across both populations, pop1 and pop2
-  dplyr::mutate(., Density = PopSize/area)  %>% 
-  dplyr::mutate(., Density1 = PopSize1/(area/2))  %>% 
-  dplyr::mutate(., Density2 = PopSize2/(area/2))  %>% 
-  # Density of mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MA_Density = MaturePopSize/area) %>% 
-  dplyr::mutate(., MA_Density1 = MaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., MA_Density2 = MaturePopSize2/(area/2)) %>% 
-  # Density of saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_Density = SaplingPopSize/area) %>% 
-  dplyr::mutate(., SAP_Density1 = SaplingPopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_Density2 = SaplingPopSize2/(area/2)) %>% 
-  # Density of mature trees and saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_MA_Density = SaplingMaturePopSize/area) %>% 
-  dplyr::mutate(., SAP_MA_Density1 = SaplingMaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_MA_Density2 = SaplingMaturePopSize2/(area/2)) %>% 
-  dplyr::mutate(., Fire_scenario = "Decreasing fire return interval") %>% 
-  dplyr::mutate(., Dispersal_probability = "Low dispersal") %>% 
-  dplyr::mutate(., Period = "Current") %>%
-  dplyr::mutate(., IterationTime = paste(Iteration, t))
-
-tSinceFire <- as.data.frame(decrease_high_distance_revision$tSinceFire_tracker)
-colnames(tSinceFire) <- c("Iteration", "t", "tSinceFire1", "tSinceFire2")
-tSinceFire <- tSinceFire %>% 
-  dplyr::mutate(., IterationTime = paste(Iteration, t)) %>% 
-  dplyr::select(., -Iteration, - t)
-
-decrease_high_distance_pop_size_total <- dplyr::full_join(decrease_high_distance_pop_size_total, tSinceFire, by = "IterationTime")
-
-
-rm(decrease_high_distance_revision)
-
-density_decrease_high_distance_revision <- decrease_high_distance_pop_size_total %>%
-  dplyr::select(., Iteration, t, Density, Density1, Density2,
-                MA_Density, MA_Density1, MA_Density2,
-                SAP_Density, SAP_Density1, SAP_Density2,
-                SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2) %>%
-  tidyr::gather(., LifeStage_pop, Density, -Iteration, -t)
-# 
-# 
-# density_decrease_high_distance_revision %>%
-#   # filter(., t < 20) %>%
-#   filter(., Iteration %in% sample(1:5000, 100, replace = F)) %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = Density, col = Iteration))+
-#   ggplot2::geom_line()+
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)+
-#   ggplot2::theme(legend.position = "none")
-# 
-# 
-# summary_decrease_high_distance_density_by_t <- density_decrease_high_distance %>%
-#   dplyr::group_by(., t, LifeStage_pop) %>%
-#   dplyr::summarise_at(., dplyr::vars(Density), dplyr::vars(mean, median, min, max)) %>%
-#   dplyr::ungroup()
-# 
-# summary_decrease_high_distance_density_by_t %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = median))+
-#   ggplot2::geom_line()+
-#   ggplot2::geom_ribbon(ggplot2::aes(x = t, ymin = min, ymax = max), alpha = 0.5) +
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)
-# 
-# 
-# (summary_decrease_high_distance_density <- summary_decrease_high_distance_density_by_t %>%
-#     dplyr::group_by(., LifeStage_pop) %>%
-#     dplyr::summarise_at(., dplyr::vars(mean, median), dplyr::funs(mean)) %>%
-#     dplyr::ungroup())
-# 
-# write.csv(summary_decrease_high_distance_density, 
-#           file = paste0(proj_dir, export_table_dir, "decrease high no restoration density.csv"))
-# 
-# rm(summary_decrease_high_distance_density_by_t, summary_decrease_high_distance_density, density_decrease_high_distance)
-
-# decrease_high_distance_pop_size_total <- decrease_high_distance_pop_size_total %>% 
-#   dplyr::select(., Iteration, t, Density) #, Density1, Density2, SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2)
-
-
-# 6) Decreasing Low Distance
-#---------------------------------------|---------------------------------------
-#                          decrease FRI, low distance                   
-#---------------------------------------|---------------------------------------
-
-decrease_low_distance_pop_size_total <- decrease_low_distance_revision$pop_sizes %>% 
-  dplyr::select(., -SEED2_1, - SEED2_2) %>% 
-  # Total population size across both populations, pop1 and pop2
-  dplyr::mutate(., PopSize               = rowSums(dplyr::select(., dplyr::contains("_")))) %>% 
-  dplyr::mutate(., PopSize1              = rowSums(dplyr::select(., dplyr::contains("_1")))) %>% 
-  dplyr::mutate(., PopSize2              = rowSums(dplyr::select(., dplyr::contains("_2")))) %>%
-  # No. mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MaturePopSize         = rowSums(dplyr::select(., dplyr::contains("MA_")))) %>% 
-  dplyr::mutate(., MaturePopSize1        = rowSums(dplyr::select(., dplyr::contains("MA_1")))) %>% 
-  dplyr::mutate(., MaturePopSize2        = rowSums(dplyr::select(., dplyr::contains("MA_2")))) %>% 
-  # No. saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingPopSize        = rowSums(dplyr::select(., dplyr::contains("SAP_")))) %>% 
-  dplyr::mutate(., SaplingPopSize1       = rowSums(dplyr::select(., dplyr::contains("SAP_1")))) %>% 
-  dplyr::mutate(., SaplingPopSize2       = rowSums(dplyr::select(., dplyr::contains("SAP_2")))) %>% 
-  # No. mature trees & saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingMaturePopSize  = rowSums(dplyr::select(., dplyr::matches("MA_|SAP_")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize1 = rowSums(dplyr::select(., dplyr::matches("MA_1|SAP_1")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize2 = rowSums(dplyr::select(., dplyr::matches("MA_2|SAP_2")))) %>% 
-  # Density of all individuals across both populations, pop1 and pop2
-  dplyr::mutate(., Density = PopSize/area)  %>% 
-  dplyr::mutate(., Density1 = PopSize1/(area/2))  %>% 
-  dplyr::mutate(., Density2 = PopSize2/(area/2))  %>% 
-  # Density of mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MA_Density = MaturePopSize/area) %>% 
-  dplyr::mutate(., MA_Density1 = MaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., MA_Density2 = MaturePopSize2/(area/2)) %>% 
-  # Density of saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_Density = SaplingPopSize/area) %>% 
-  dplyr::mutate(., SAP_Density1 = SaplingPopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_Density2 = SaplingPopSize2/(area/2)) %>% 
-  # Density of mature trees and saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_MA_Density = SaplingMaturePopSize/area) %>% 
-  dplyr::mutate(., SAP_MA_Density1 = SaplingMaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_MA_Density2 = SaplingMaturePopSize2/(area/2)) %>% 
-  dplyr::mutate(., Fire_scenario = "Decreasing fire return interval") %>% 
-  dplyr::mutate(., Dispersal_probability = "High dispersal") %>% 
-  dplyr::mutate(., Period = "Current") %>%
-  dplyr::mutate(., IterationTime = paste(Iteration, t))
-
-tSinceFire <- as.data.frame(decrease_low_distance_revision$tSinceFire_tracker)
-colnames(tSinceFire) <- c("Iteration", "t", "tSinceFire1", "tSinceFire2")
-tSinceFire <- tSinceFire %>% 
-  dplyr::mutate(., IterationTime = paste(Iteration, t)) %>% 
-  dplyr::select(., -Iteration, - t)
-
-decrease_low_distance_pop_size_total <- dplyr::full_join(decrease_low_distance_pop_size_total, tSinceFire, by = "IterationTime")
-
-
-rm(decrease_low_distance_revision)
-
-
-pop1 <- decrease_low_distance_pop_size_total %>% 
-  dplyr::select(., Iteration,t, contains("1")) %>% 
-  dplyr::mutate(., Pop = "pop1") %>% 
-  dplyr::mutate(., Dispersal_probability = "Low")
-
-colnames(pop1) <- c("Iteration","t", "CS", "SD", "SAP", "MA", "PopSize", "MaturePopSize", "SaplingPopSize", "SaplingMaturePopSize",
-                    "Density", "MA_Density", "SAP_Density", "SAP_MA_Density", "tSinceFire", "Pop", "Dispersal_probability")
-
-pop2 <- decrease_low_distance_pop_size_total %>% 
-  dplyr::select(., Iteration,t, dplyr::contains("2")) %>% 
-  dplyr::mutate(., Pop = "pop2") %>% 
-  dplyr::mutate(., Dispersal_probability = "Low")
-
-colnames(pop2) <- c("Iteration","t", "CS", "SD", "SAP", "MA", "PopSize", "MaturePopSize", "SaplingPopSize", "SaplingMaturePopSize",
-                    "Density", "MA_Density", "SAP_Density", "SAP_MA_Density", "tSinceFire", "Pop", "Dispersal_probability")
-
-pops <- dplyr::bind_rows(pop1, pop2)
-
-# pops %>%
-#   dplyr::group_by(t, Pop) %>%
-#   dplyr::summarise_at(., vars(CS, SD), funs( median)) %>%
-#   dplyr::ungroup() %>%
-#   tidyr::gather(., Stage, Count, -Pop, -t) %>%
-#   ggplot2::ggplot(.,ggplot2::aes(., x = t, y = Count, col = Stage))+
-#   ggplot2::geom_line()+
-#   ggplot2::facet_grid(~Pop)
-
-# density_decrease_low_ditance_revision <- decrease_low_distance_pop_size_total %>%
-#   dplyr::select(., Iteration, t, Density, Density1, Density2,
-#                 MA_Density, MA_Density1, MA_Density2,
-#                 SAP_Density, SAP_Density1, SAP_Density2,
-#                 SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2) %>%
-#   tidyr::gather(., LifeStage_pop, Density, -Iteration, -t)
-# 
-# 
-# density_decrease_low_distance %>%
-#   # dplyr::filter(., t < 20) %>%
-#   dplyr::filter(., Iteration %in% sample(1:5000, 100, replace = F)) %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = Density, col = Iteration))+
-#   ggplot2::geom_line()+
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)+
-#   ggplot2::theme(legend.position = "none")
-# 
-# 
-# summary_decrease_low_distance_density_by_t <- density_decrease_low_distance %>%
-#   dplyr::group_by(., t, LifeStage_pop) %>%
-#   dplyr::summarise_at(., vars(Density), vars(mean, median, min, max)) %>%
-#   dplyr::ungroup()
-# 
-# summary_decrease_low_distance_density_by_t %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = median))+
-#   ggplot2::geom_line()+
-#   ggplot2::geom_ribbon(ggplot2::aes(x = t, ymin = min, ymax = max), alpha = 0.5) +
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)
-# 
-# 
-# (summary_decrease_low_distance_density <- summary_decrease_low_distance_density_by_t %>%
-#     dplyr::group_by(., LifeStage_pop) %>%
-#     dplyr::summarise_at(., vars(mean, median), funs(mean)) %>%
-#     dplyr::ungroup())
-# 
-# write.csv(summary_decrease_low_distance_density, 
-#           file = paste0(proj_dir, export_table_dir, "decrease low no restoration density.csv"))
-# 
-# rm(summary_decrease_low_distance_density_by_t, summary_decrease_low_distance_density, density_decrease_low_distance)
-
-# decrease_low_distance_pop_size_total <- decrease_low_distance_pop_size_total %>% 
-#   dplyr::select(., Iteration, t, Density) #, Density1, Density2, SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2)
-
 ################################################################################
 
-# 7) Constant High Distance Historical
+## Goal is to create a figure that shows median population size as
+## a function of time stratified by the scenarios
+## Start by filtering for total density, then aggregate population sizes from each scenario.
+## I do not consider seeds as these are not generally counted in
+## estimates of tree abundance/density measures.
+
 #---------------------------------------|---------------------------------------
-#                           Constant FRI, high distance_historical 
-#---------------------------------------|---------------------------------------
-area <- 2000
-constant_high_distance_historic_revision_pop_size_total <- constant_high_distance_historic_revision$pop_sizes %>% 
-  dplyr::select(., -SEED2_1, - SEED2_2) %>% 
-  # Total population size across both populations, pop1 and pop2
-  dplyr::mutate(., PopSize               = rowSums(dplyr::select(., dplyr::contains("_")))) %>% 
-  dplyr::mutate(., PopSize1              = rowSums(dplyr::select(., dplyr::contains("_1")))) %>% 
-  dplyr::mutate(., PopSize2              = rowSums(dplyr::select(., dplyr::contains("_2")))) %>%
-  # No. mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MaturePopSize         = rowSums(dplyr::select(., dplyr::contains("MA_")))) %>% 
-  dplyr::mutate(., MaturePopSize1        = rowSums(dplyr::select(., dplyr::contains("MA_1")))) %>% 
-  dplyr::mutate(., MaturePopSize2        = rowSums(dplyr::select(., dplyr::contains("MA_2")))) %>% 
-  # No. saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingPopSize        = rowSums(dplyr::select(., dplyr::contains("SAP_")))) %>% 
-  dplyr::mutate(., SaplingPopSize1       = rowSums(dplyr::select(., dplyr::contains("SAP_1")))) %>% 
-  dplyr::mutate(., SaplingPopSize2       = rowSums(dplyr::select(., dplyr::contains("SAP_2")))) %>% 
-  # No. mature trees & saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingMaturePopSize  = rowSums(dplyr::select(., dplyr::matches("MA_|SAP_")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize1 = rowSums(dplyr::select(., dplyr::matches("MA_1|SAP_1")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize2 = rowSums(dplyr::select(., dplyr::matches("MA_2|SAP_2")))) %>% 
-  # Density of all individuals across both populations, pop1 and pop2
-  dplyr::mutate(., Density = PopSize/area)  %>% 
-  dplyr::mutate(., Density1 = PopSize1/(area/2))  %>% 
-  dplyr::mutate(., Density2 = PopSize2/(area/2))  %>% 
-  # Density of mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MA_Density = MaturePopSize/area) %>% 
-  dplyr::mutate(., MA_Density1 = MaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., MA_Density2 = MaturePopSize2/(area/2)) %>% 
-  # Density of saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_Density = SaplingPopSize/area) %>% 
-  dplyr::mutate(., SAP_Density1 = SaplingPopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_Density2 = SaplingPopSize2/(area/2)) %>% 
-  # Density of mature trees and saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_MA_Density = SaplingMaturePopSize/area) %>% 
-  dplyr::mutate(., SAP_MA_Density1 = SaplingMaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_MA_Density2 = SaplingMaturePopSize2/(area/2)) %>% 
-  dplyr::mutate(., Fire_scenario = "Historical fire return interval") %>% 
-  dplyr::mutate(., Dispersal_probability = "Low dispersal") %>% 
-  dplyr::mutate(., Period = "Historical") %>%
-  dplyr::mutate(., IterationTime = paste(Iteration, t))
-
-tSinceFire <- as.data.frame(constant_high_distance_historic_revision$tSinceFire_tracker)
-colnames(tSinceFire) <- c("Iteration", "t", "tSinceFire1", "tSinceFire2")
-tSinceFire <- tSinceFire %>% 
-  dplyr::mutate(., IterationTime = paste(Iteration, t)) %>% 
-  dplyr::select(., -Iteration, - t)
-
-constant_high_distance_historic_revision_pop_size_total <- dplyr::full_join(constant_high_distance_historic_revision_pop_size_total, tSinceFire, by = "IterationTime") %>% 
-  dplyr::mutate(., t_burnin = t) %>% 
-  dplyr::mutate(., t = t - 10) %>% 
-  dplyr::filter(., t > 0)
-
-
-
-
-density_constant_high_distance_historic_revision <- constant_high_distance_historic_revision_pop_size_total %>%
-  # filter(., t < 250) %>%
-  dplyr::select(., Iteration, t, Density, Density1, Density2,
-                MA_Density, MA_Density1, MA_Density2,
-                SAP_Density, SAP_Density1, SAP_Density2,
-                SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2, tSinceFire1, tSinceFire2) %>%
-  tidyr::gather(., LifeStage_pop, Density, -Iteration, -t,  -tSinceFire1, -tSinceFire2)
-# 
-# 
-density_constant_high_distance_historic_revision %>%
-  # dplyr::filter(., t < 5) %>%
-  dplyr::filter(., Iteration %in% sample(1:5000, 100, replace = F)) %>%
-  ggplot2::ggplot(., ggplot2::aes(x = t, y = Density, col = Iteration))+
-  ggplot2::geom_line()+
-  ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)+
-  ggplot2::theme(legend.position = "none")
-
-# 
-# summary_constant_high_distance_historic_revision_pop_size_totaldensity_by_t <- density_constant_high_distance_historic_revision %>%
-#   # dplyr::filter(., t <250) %>%
-#   dplyr::group_by(., t, LifeStage_pop) %>%
-#   dplyr::summarise_at(., dplyr::vars(Density), list(mean = mean, median = median, min = min, max = max)) %>%
-#   dplyr::ungroup()
-# 
-# summary_constant_high_distance_historic_revision_pop_size_totaldensity_by_t %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = median))+
-#   ggplot2::geom_line()+
-#   ggplot2::geom_ribbon(ggplot2::aes(x = t, ymin = min, ymax = max), alpha = 0.5) +
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)
-# 
-# 
-# (summary_constant_high_distance_historic_revision_pop_size_totaldensity <- summary_constant_high_distance_historic_revision_pop_size_totaldensity_by_t %>%
-#     dplyr::group_by(., LifeStage_pop) %>%
-#     dplyr::summarise_at(., dplyr::vars(mean, median), funs(mean)) %>%
-#     dplyr::ungroup())
-# 
-# write.csv(summary_constant_high_distance_historic_revision_pop_size_totaldensity, 
-#           file = paste0(proj_dir, export_table_dir, "constant high restoration density.csv"))
-# 
-# rm(summary_constant_high_distance_historic_revision_pop_size_totaldensity_by_t, summary_constant_high_distance_historic_revision_pop_size_totaldensity, density_constant_high_distance_historic)
-
-# constant_high_distance_historic_revision_pop_size_totalpop_size_total <- constant_high_distance_historic_revision_pop_size_totalpop_size_total %>% 
-# dplyr::select(., Iteration, t, Density, Density1, Density2, SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2)
-
-# 8) Constant Low Distance Restoration
-#---------------------------------------|---------------------------------------
-#                 Historical FRI, low distance, historical mortality                   
+#                           Density as a function of 
+#                       time since fire. Historical demographics
 #---------------------------------------|---------------------------------------
 
-constant_low_distance_historic_pop_size_total <- constant_low_distance_historic_revision$pop_sizes %>% 
-  dplyr::select(., -SEED2_1, - SEED2_2) %>% 
-  # Total population size across both populations, pop1 and pop2
-  dplyr::mutate(., PopSize               = rowSums(dplyr::select(., dplyr::contains("_")))) %>% 
-  dplyr::mutate(., PopSize1              = rowSums(dplyr::select(., dplyr::contains("_1")))) %>% 
-  dplyr::mutate(., PopSize2              = rowSums(dplyr::select(., dplyr::contains("_2")))) %>%
-  # No. mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MaturePopSize         = rowSums(dplyr::select(., dplyr::contains("MA_")))) %>% 
-  dplyr::mutate(., MaturePopSize1        = rowSums(dplyr::select(., dplyr::contains("MA_1")))) %>% 
-  dplyr::mutate(., MaturePopSize2        = rowSums(dplyr::select(., dplyr::contains("MA_2")))) %>% 
-  # No. saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingPopSize        = rowSums(dplyr::select(., dplyr::contains("SAP_")))) %>% 
-  dplyr::mutate(., SaplingPopSize1       = rowSums(dplyr::select(., dplyr::contains("SAP_1")))) %>% 
-  dplyr::mutate(., SaplingPopSize2       = rowSums(dplyr::select(., dplyr::contains("SAP_2")))) %>% 
-  # No. mature trees & saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SaplingMaturePopSize  = rowSums(dplyr::select(., dplyr::matches("MA_|SAP_")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize1 = rowSums(dplyr::select(., dplyr::matches("MA_1|SAP_1")))) %>% 
-  dplyr::mutate(., SaplingMaturePopSize2 = rowSums(dplyr::select(., dplyr::matches("MA_2|SAP_2")))) %>% 
-  # Density of all individuals across both populations, pop1 and pop2
-  dplyr::mutate(., Density = PopSize/area)  %>% 
-  dplyr::mutate(., Density1 = PopSize1/(area/2))  %>% 
-  dplyr::mutate(., Density2 = PopSize2/(area/2))  %>% 
-  # Density of mature trees across both populations, pop1 and pop2
-  dplyr::mutate(., MA_Density = MaturePopSize/area) %>% 
-  dplyr::mutate(., MA_Density1 = MaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., MA_Density2 = MaturePopSize2/(area/2)) %>% 
-  # Density of saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_Density = SaplingPopSize/area) %>% 
-  dplyr::mutate(., SAP_Density1 = SaplingPopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_Density2 = SaplingPopSize2/(area/2)) %>% 
-  # Density of mature trees and saplings across both populations, pop1 and pop2
-  dplyr::mutate(., SAP_MA_Density = SaplingMaturePopSize/area) %>% 
-  dplyr::mutate(., SAP_MA_Density1 = SaplingMaturePopSize1/(area/2)) %>% 
-  dplyr::mutate(., SAP_MA_Density2 = SaplingMaturePopSize2/(area/2)) %>% 
-  dplyr::mutate(., Fire_scenario = "Historical fire return interval") %>% 
-  dplyr::mutate(., Dispersal_probability = "High dispersal") %>% 
-  dplyr::mutate(., Period = "Historical") %>%
-  dplyr::mutate(., IterationTime = paste(Iteration, t))
-
-tSinceFire <- as.data.frame(constant_low_distance_historic_revision$tSinceFire_tracker)
-colnames(tSinceFire) <- c("Iteration", "t", "tSinceFire1", "tSinceFire2")
-tSinceFire <- tSinceFire %>% 
-  dplyr::mutate(., IterationTime = paste(Iteration, t)) %>% 
-  dplyr::select(., -Iteration, - t)
-
-constant_low_distance_historic_pop_size_total <- dplyr::full_join(constant_low_distance_historic_pop_size_total, tSinceFire, by = "IterationTime")%>% 
-  dplyr::mutate(., t_burnin = t) %>% 
-  dplyr::mutate(., t = t - 10) %>% 
-  dplyr::filter(., t > 0)
-
-historical <- dplyr::bind_rows(constant_high_distance_historic_revision_pop_size_total, constant_low_distance_historic_pop_size_total)
+historical <- dplyr::bind_rows(constant_high_distance_historical_pop_size_total, constant_low_distance_historical_pop_size_total)
 
 pop1 <- historical %>% 
   dplyr::select(., Iteration, Fire_scenario, Dispersal_probability, dplyr::contains("1")) %>% 
@@ -1123,7 +430,6 @@ density_tSinceFire %>%
   ggplot2::scale_fill_manual(values = c("#ef8a62", "#67a9cf")) +
   ggplot2::geom_ribbon(aes(x = tSinceFire, ymin = SAP_MA_Density_q1, ymax = SAP_MA_Density_q3,
                                              col = Dispersal_probability), alpha = 0.05, lty = 2) +
-  ggplot2::scale_fill_manual(values = c("#ef8a62", "#67a9cf")) +
   ggplot2::geom_line(ggplot2::aes(col = Dispersal_probability), lwd = 1.5) +
   ggplot2::scale_color_manual(values = c("#ef8a62", "#67a9cf")) +
   ggplot2::theme_bw() +
@@ -1135,7 +441,7 @@ density_tSinceFire %>%
   ggplot2::theme(strip.background = ggplot2::element_rect(colour = "black", fill = "white"),
                  strip.text       = ggplot2::element_text(colour = "black",  size = strip_text_size))+
   ggplot2::theme(plot.margin = grid::unit(c(3, 1, 1, 1), "lines")) #+  # top, right, bottom, left
-  # ggplot2::geom_vline(xintercept = 268, colour = "darkgrey", lty = 2)
+
   
 legd <- grid::legendGrob(c("High dispersal probability","Low dispersal probability"),
                          nrow          = 1,
@@ -1157,87 +463,41 @@ legd <- grid::legendGrob(c("High dispersal probability","Low dispersal probabili
 grid::grid.draw(legd)
   
 
-dev.off()
+# dev.off()
 
-rm(constant_low_distance_historic_revision, pops, tSinceFire, legd, density_tSinceFire, constant_high_distance_historic_revision)
-
-density_constant_low_distance_historic <- constant_low_distance_historic_pop_size_total %>%
-  dplyr::select(., Iteration, t, Density, Density1, Density2,
-                MA_Density, MA_Density1, MA_Density2,
-                SAP_Density, SAP_Density1, SAP_Density2,
-                SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2) %>%
-  tidyr::gather(., LifeStage_pop, Density, -Iteration, -t)
+rm(pops, legd, density_tSinceFire)
 
 
-density_constant_low_distance_historic %>%
-  # dplyr::filter(., t < 20) %>%
-  dplyr::filter(., Iteration %in% sample(1:5000, 100, replace = F)) %>%
-  ggplot2::ggplot(., ggplot2::aes(x = t, y = Density, col = Iteration))+
-  ggplot2::geom_line()+
-  ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)+
-  ggplot2::theme(legend.position = "none")
-# 
-# 
-# summary_constant_low_distance_historic_density_by_t <- density_constant_low_distance_historic %>%
-#   dplyr::group_by(., t, LifeStage_pop) %>%
-#   dplyr::summarise_at(., dplyr::vars(Density), dplyr::funs(mean, median, min, max)) %>%
-#   dplyr::ungroup()
-# 
-# summary_constant_low_distance_historic_density_by_t %>%
-#   ggplot2::ggplot(., ggplot2::aes(x = t, y = median))+
-#   ggplot2::geom_line()+
-#   ggplot2::geom_ribbon(ggplot2::aes(x = t, ymin = min, ymax = max), alpha = 0.5) +
-#   ggplot2::facet_wrap(~LifeStage_pop, scale = "free", ncol = 3)
-# 
-# (summary_constant_low_distance_historic_density <- summary_constant_low_distance_historic_density_by_t %>%
-#     dplyr::group_by(., LifeStage_pop) %>%
-#     dplyr::summarise_at(., dplyr::vars(mean, median), dplyr::funs(mean)) %>%
-#     dplyr::ungroup())
-# 
-# write.csv(summary_constant_low_distance_historic_density, 
-#           file = paste0(proj_dir, export_table_dir, "constant low restoration density.csv"))
-# 
-# rm(summary_constant_low_distance_historic_density_by_t, summary_constant_low_distance_historic_density, density_constant_low_distance_historic)
-
-# constant_low_distance_historic_pop_size_total <- constant_low_distance_historic_pop_size_total %>% 
-#   dplyr::select(., Iteration, t, Density, Density1, Density2, SAP_MA_Density, SAP_MA_Density1, SAP_MA_Density2)
-
-################################################################################
 #---------------------------------------|---------------------------------------
-#                               Create Figures                  
+#                        Bind model outputs for each time period
 #---------------------------------------|---------------------------------------
-################################################################################
-
-## Goal is to create a figure that shows median population size as
-## a function of time stratified by the scenarios
-## Start by filtering for total density, then aggregate population sizes from each scenario.
-## I do not consider seeds as these are not generally counted in
-## estimates of tree abundance/density measures.
-
 
 current_models <- dplyr::bind_rows(constant_low_distance_pop_size_total, 
-                            constant_high_distance_pop_size_total,
-                            suppression_low_distance_pop_size_total,
-                            suppression_high_distance_pop_size_total,
-                            decrease_low_distance_pop_size_total,
-                            decrease_high_distance_pop_size_total) %>% 
+                                   constant_high_distance_pop_size_total,
+                                   suppression_low_distance_pop_size_total,
+                                   suppression_high_distance_pop_size_total,
+                                   decrease_low_distance_pop_size_total,
+                                   decrease_high_distance_pop_size_total) %>% 
   dplyr::mutate(., Treatment = paste(Fire_scenario, Dispersal_probability, Period))
 
 unique(current_models$Treatment)
 
-rm(constant_high_distance_pop_size_total, constant_low_distance_pop_size_total,
-   suppression_high_distance_pop_size_total, suppression_low_distance_pop_size_total,
-   decrease_high_distance_pop_size_total, decrease_low_distance_pop_size_total)
+rm(constant_high_distance_pop_size_total, 
+   constant_low_distance_pop_size_total,
+   suppression_high_distance_pop_size_total, 
+   suppression_low_distance_pop_size_total,
+   decrease_high_distance_pop_size_total, 
+   decrease_low_distance_pop_size_total)
 
 
-historic_models <- dplyr::bind_rows(constant_low_distance_historic_pop_size_total,
-                                constant_high_distance_historic_revision_pop_size_total) %>% 
+historic_models <- dplyr::bind_rows(constant_low_distance_historical_pop_size_total,
+                                    constant_high_distance_historical_pop_size_total) %>% 
   dplyr::mutate(., Treatment = paste(Fire_scenario, Dispersal_probability, Period))
 
 unique(historic_models$Treatment)
 
-rm(constant_low_distance_historic_pop_size_total,
-   constant_high_distance_historic_revision_pop_size_total)
+rm(constant_low_distance_historical_pop_size_total,
+   constant_high_distance_historical_pop_size_total)
    
 
 current_model_summary <- current_models %>% 
@@ -1407,52 +667,75 @@ grid::grid.draw(legd)
 #---------------------------------------|---------------------------------------
 ################################################################################
 
-extinct_current <- current_models %>%
-  # dplyr::group_by(., Iteration, Fire_scenario, Dispersal_probability) %>%
-  dplyr::filter(., Density < 10) %>%  # Low threshold that is reported in results
-  # dplyr::filter(., Density < 2e-04) %>%  # High threshold to show information about suppression
-  # dplyr::ungroup() %>%
-  dplyr::arrange(., Iteration, t) %>%
-  dplyr::group_by(., Iteration, Fire_scenario, Dispersal_probability) %>%
-  dplyr::filter(., t == min(t)) %>%
-  dplyr::ungroup() %>%
+extinct_current <- data.table::as.data.table(current_models) %>%
+  .[SAP_MA_Density < 0.5,] %>%
+  #.[Density < 2e-04,] %>%
+  .[order(Treatment, Iteration, t)] %>%
+  .[ , .SD[which.min(t)], by = .(Treatment, Iteration)] %>% 
+  .[,TreatmentItT:=paste(Treatment, Iteration, t)] %>%
+  .[,TreatmentIt:=paste(Treatment, Iteration)] %>%
+  .[,Extirpation:=1] %>%
+  .[,.(Treatment, Iteration, t, Extirpation)] %>% 
+  .[,Period := "Current"]
+
+
+extinct_historical <- data.table::as.data.table(historic_models) %>%
+  .[SAP_MA_Density < 0.05,] %>%
+  #.[Density < 2e-04,] %>%
+  .[order(Treatment, Iteration, t)] %>%
+  .[, .SD[which.min(t)], by = .(Treatment, Iteration)] %>% 
+  .[,TreatmentItT:=paste(Treatment, Iteration, t)] %>%
+  .[,TreatmentIt:=paste(Treatment, Iteration)] %>%
+  .[,Extirpation:=1] %>%
+  .[,.(Treatment, Iteration, t, Extirpation)] %>% 
+  .[,Period := "Historical"]
+
+
+extinct <- dplyr::bind_rows(extinct_current, extinct_historical) %>% 
+  dplyr::mutate(., Fire_scenario=ifelse(grepl(pattern = "Decreasing", x = Treatment), "Decreasing fire return interval", NA)) %>% 
+  dplyr::mutate(., Fire_scenario=ifelse(grepl(pattern = "Historical", x = Treatment), "Historical fire return interval", Fire_scenario)) %>% 
+  dplyr::mutate(., Fire_scenario=ifelse(grepl(pattern = "Suppression", x = Treatment), "Suppression", Fire_scenario)) %>% 
+  dplyr::mutate(., Dispersal_probability=ifelse(grepl(pattern = "High", x = Treatment), "High dispersal", NA)) %>% 
+  dplyr::mutate(., Dispersal_probability=ifelse(grepl(pattern = "Low", x = Treatment), "Low dispersal", Dispersal_probability))
+
+
+# ggplot2::ggplot(data = extinct, ggplot2::aes(x = t))+
+#   ggplot2::geom_density(alpha = 0.5)+
+#   ggplot2::facet_grid( ~ Treatment )
+
+Cum_extirpation_current <- merge(data.table::as.data.table(current_models), extinct_current, 
+                                 by=c("Treatment", "Iteration","t"), all.x=TRUE) %>%
+  dplyr::mutate(., Extirpation=ifelse(is.na(Extirpation), 0, Extirpation)) %>%
+  dplyr::group_by(., Fire_scenario, Dispersal_probability, t) %>% 
+  dplyr::summarise_at(., dplyr::vars(Extirpation), dplyr::funs(sum)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(., Fire_scenario, Dispersal_probability) %>% 
+  dplyr::mutate(., CumSum = cumsum(Extirpation)) %>% 
+  dplyr::mutate(., PExt = CumSum/5000) %>% 
+  dplyr::ungroup() %>% 
   dplyr::mutate(., Period = "Current")
 
-test <- extinct_current %>%
-  dplyr::group_by(., Treatment, Iteration) %>%
-  dplyr::tally() %>%
-  dplyr::ungroup()
 
-sum(test$n >1)
 
-rm(test)
-
-extinct_historic <- historic_models %>%
-  dplyr::group_by(., Iteration, Fire_scenario, Dispersal_probability) %>%
-  dplyr::filter(., Density < 20) %>%  # Low threshold that is reported in results
-  # dplyr::filter(., Density < 2e-04) %>%  # High threshold to show information about suppression
-  # dplyr::ungroup() %>%
-  dplyr::arrange(., Iteration, t) %>%
-  dplyr::group_by(., Iteration, Fire_scenario, Dispersal_probability) %>%
-  dplyr::filter(., t == min(t)) %>%
-  dplyr::ungroup() %>%
+Cum_extirpation_historical <-  merge(data.table::as.data.table(historic_models), extinct_historical, 
+                                     by=c("Treatment", "Iteration","t"), all.x=TRUE) %>%
+  dplyr::mutate(., Extirpation=ifelse(is.na(Extirpation), 0, Extirpation)) %>%
+  dplyr::group_by(., Fire_scenario, Dispersal_probability, t) %>% 
+  dplyr::summarise_at(., dplyr::vars(Extirpation), dplyr::funs(sum)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(., Fire_scenario, Dispersal_probability) %>% 
+  dplyr::mutate(., CumSum = cumsum(Extirpation)) %>% 
+  dplyr::mutate(., PExt = CumSum/5000) %>% 
+  dplyr::ungroup() %>% 
   dplyr::mutate(., Period = "Historical")
 
-test <- extinct_historic %>%
-  dplyr::group_by(., Treatment, Iteration) %>%
-  dplyr::tally() %>%
-  dplyr::ungroup()
+Cum_extirpation <- dplyr::bind_rows(Cum_extirpation_current,Cum_extirpation_historical)
 
-sum(test$n >1)
-
-rm(test)
-
-extinct <- dplyr::bind_rows(extinct_current, extinct_historic)
+Cum_extirpation %>% dplyr::filter(., t == 500)
 
 
-# ggplot2::ggplot(data = extinct, ggplot2::aes(x = t, fill = Dispersal_probability))+
-#   ggplot2::geom_density(alpha = 0.5)+
-#   ggplot2::facet_grid( Period ~ Fire_scenario + Dispersal_probability )
+
+
 
 (median_extinction_time <- extinct %>%
     dplyr::group_by(Period, Fire_scenario, Dispersal_probability) %>%
@@ -1464,7 +747,7 @@ median_extinction_time_export <- median_extinction_time %>%
   dplyr::mutate(., `Time to extirpation` = paste0(round(median, 3), "(", round(q1,3), ", ",round(q3,3),")" )) %>% 
   dplyr::select(., Period, Fire_scenario, Dispersal_probability, `Time to extirpation`)
 
-# write.csv(median_extinction_time_export, file = paste0(proj_dir, export_table_dir, "Final? extirpation times.csv"))
+# write.csv(median_extinction_time_export, file = paste0(proj_dir, export_results_dir, "Extirpation times.csv"))
 
 pd <- ggplot2::position_dodge(0.4)
 
@@ -1501,54 +784,30 @@ ggplot2::ggplot(data = median_extinction_time,
 #---------------------------------------|---------------------------------------
 ################################################################################
 
-
-Cum_extirpation <- extinct %>% 
-  dplyr::mutate(., Iteration = as.numeric(Iteration)) %>% 
-  dplyr::filter(., Period == "Current") %>% 
-  dplyr::mutate(., Extirpation = 1) %>% 
-  dplyr::select(., Iteration, t, Fire_scenario, Dispersal_probability, Extirpation) %>% 
-  tidyr::complete(.,Iteration           = 1:5000, 
-                  t                     = 1:500,
-                  Fire_scenario         = unique(extinct$Fire_scenario), 
-                  Dispersal_probability = unique(extinct$Dispersal_probability),
-                  fill                  = list(Extirpation = 0)) %>% 
-  dplyr::group_by(., Fire_scenario, Dispersal_probability, t) %>% 
-  dplyr::summarise_at(., dplyr::vars(Extirpation), dplyr::funs(sum)) %>% 
-  dplyr::ungroup() %>% 
-  dplyr::group_by(., Fire_scenario, Dispersal_probability) %>% 
-  dplyr::mutate(., CumSum = cumsum(Extirpation)) %>% 
-  dplyr::mutate(., PExt = CumSum/5000) %>% 
-  dplyr::ungroup()
-
-
-Cum_extirpation %>% dplyr::filter(., t == 500)
-
-# tiff(filename = paste0(proj_dir, figures_dir, "Final cumulative extirpation.tiff"),
+# tiff(filename = paste0(proj_dir, figures_dir, "Cumulative extirpation revision.tiff"),
 #      width = 12,
 #      height = 8.5,
 #      units = "in",
 #      res = 300,
 #      compression = "lzw")
 
-Cum_extirpation %>% 
-  ggplot2::ggplot(data = ., 
-                  ggplot2::aes(x = t, y = PExt, col = Fire_scenario))+
-  ggplot2::geom_line(data = Cum_extirpation, ggplot2::
-                       aes(x = t, y = PExt, lty = Dispersal_probability), lwd = 1.5)+
-  # ggplot2::scale_colour_manual(
+Cum_extirpation_current %>% 
+  ggplot2::ggplot(data = ., ggplot2::aes(x = t, y = PExt, col = Fire_scenario))+
+  ggplot2::geom_line(data = Cum_extirpation_current, ggplot2::aes(x = t, y = PExt, lty = Dispersal_probability), lwd = 1.5)+
+  # scale_colour_manual(
   #   "CI horizontal line", values = c("#d73027", "#1a9850"),
-  #   guide=ggplot2::guide_legend(override.aes = list(colour=c("#d73027", "#1a9850"))),
+  #   guide=guide_legend(override.aes = list(colour=c("#d73027", "#1a9850"))),
   #   labels=c("Decreasing fire return interval", "Historical fire return interval")
   # ) +
-  ggplot2::scale_colour_manual(values = c("#d73027", "#1a9850")) +
-  # ggplot2::facet_grid(~ Dispersal_probability) +
+  ggplot2::scale_colour_manual(values = c("#d73027", "#1a9850", "#fee08b")) +
+  # facet_grid(~ Dispersal_probability) +
   ggplot2::theme_bw() +
   ggplot2::labs(x = "\nTime (years)",
                 y = "Cumulative extirpation probability \n") +
   ggplot2::theme(strip.background = ggplot2::element_rect(colour = "black", fill = "white"),
                  strip.text       = ggplot2::element_text(colour = "black",  size = strip_text_size)) +
-  # ggplot2::theme(legend.position = "none") +
-  ggplot2::theme(legend.position  = "top", legend.box = "vertical")+
+  # theme(legend.position = "none") +
+  ggplot2::theme(legend.position = "top", legend.box = "vertical")+
   ggplot2::guides(linetype    = ggplot2::guide_legend(keywidth = 3, keyheight = 1)) +
   ggplot2::theme(legend.text  = ggplot2::element_text(size = axis_text_size))+
   ggplot2::theme(legend.title = ggplot2::element_blank())+
@@ -1556,71 +815,11 @@ Cum_extirpation %>%
   ggplot2::theme(axis.text    = ggplot2::element_text(size = axis_text_size)) +
   ggplot2::scale_y_continuous(breaks = seq(0, 1, by = 0.1))+
   ggplot2::theme(plot.margin = grid::unit(c(1, 1, 1, 1), "lines"))# top, right, bottom, left
-
-
-# legd <- grid::legendGrob(c("Historical fire return interval", "Suppression","Decreasing fire return interval"),
-#                          nrow=1,
-#                          ncol=3,
-#                          lines.first = TRUE,
-#                          hgap = grid::unit(2, "lines"),
-#                          vgap = grid::unit(1, "lines"),
-#                          default.units = "lines",
-#                          pch=22,
-#                          gp=grid::gpar(col      = c("black","black"),
-#                                        fill     = c("#1a9850", "#fee08b", "#d73027"),
-#                                        fontsize = axis_text_size,
-#                                        fontface = "bold"),
-#                          vp = grid::viewport(x = 0, y = 0, w = 1.02, h = 1.92, just = c("left", "bottom")))
-# 
-# grid::grid.draw(legd)
-# 
-# 
-# legd1 <- grid::legendGrob(c("High dispersal probability", "Low dispersal probability"),
-#                          nrow=1,
-#                          ncol=2,
-#                          lines.first = TRUE,
-#                          hgap = grid::unit(2, "lines"),
-#                          vgap = grid::unit(1, "lines"),
-#                          default.units = "lines",
-#                          lty = c(1,2),
-#                          gp=grid::gpar(col      = c("black","black"),
-#                                        fontsize = axis_text_size,
-#                                        fontface = "bold"),
-#                          vp = grid::viewport(x = 0, y = 0, w = 1.02, h = 1.92, just = c("left", "bottom")))
-# 
-# grid::grid.draw(legd1)
-
 # dev.off()
-
-
-
-
-Cum_extirpation_historical <- extinct %>% 
-  dplyr::mutate(., Iteration = as.numeric(Iteration)) %>% 
-  dplyr::filter(., Period == "Historical") %>% 
-  dplyr::mutate(., Extirpation = 1) %>% 
-  dplyr::select(., Iteration, t, Fire_scenario, Dispersal_probability, Extirpation) %>% 
-  tidyr::complete(.,Iteration             = 1:5000, 
-           t                     = 1:500,
-           Fire_scenario         = unique(extinct$Fire_scenario), 
-           Dispersal_probability = unique(extinct$Dispersal_probability),
-           fill                  = list(Extirpation = 0)) %>% 
-  dplyr::group_by(., Fire_scenario, Dispersal_probability, t) %>% 
-  dplyr::summarise_at(., dplyr::vars(Extirpation), dplyr::funs(sum)) %>% 
-  dplyr::ungroup() %>% 
-  dplyr::group_by(., Fire_scenario, Dispersal_probability) %>% 
-  dplyr::mutate(., CumSum = cumsum(Extirpation)) %>% 
-  dplyr::mutate(., PExt = CumSum/5000) %>% 
-  dplyr::ungroup()
-
-
-Cum_extirpation_historical %>% dplyr::filter(., t == 500)
-
-
 
 ################################################################################
 #---------------------------------------|---------------------------------------
-#                             Extirpations 200 years 
+#                                 Extirpations
 #---------------------------------------|---------------------------------------
 ################################################################################
 
@@ -1629,16 +828,15 @@ Cum_extirpation_historical %>% dplyr::filter(., t == 500)
 # Do demographics alone in absence of changes to fire return interval suggest
 # an increase in odds of extirpation?
 #---------------------------------------|---------------------------------------
-extirpation_150_historic <- extinct %>% 
-  # filter(.,  t <= 150) %>%
-  dplyr::filter(Fire_scenario == "Historic fire return interval") %>%
+extirpation_historic <- extinct %>% 
+  dplyr::filter(Fire_scenario == "Historical fire return interval") %>%
   dplyr::group_by(.,Period) %>% 
   dplyr::tally() %>% 
   dplyr::ungroup()
 
 # extirpation_150_historic[2,] <- c("Historic", 0) # only if time horizon is 100
 
-historic_table <- extirpation_150_historic %>%
+historic_table <- extirpation_historic %>%
   dplyr::mutate(., Extirpations = as.numeric(n)) %>%
   dplyr::mutate(., Surviving = 2*reps - Extirpations) %>% 
   dplyr::select(., -n) 
@@ -1662,16 +860,16 @@ HistoricFRI_ORs <- data.frame(OR = HistoricFRI_ORs$estimate, LL = HistoricFRI_OR
 # odds of extirpation
 #---------------------------------------|---------------------------------------------------
 
-extirpation_150_fire <- extinct %>% 
+extirpation_fire <- extinct %>% 
   dplyr::filter(., Period == "Current") %>% 
   # dplyr::filter(., t <= 150) %>%
   dplyr::group_by(.,Fire_scenario) %>% 
   dplyr::tally() %>% 
   dplyr::ungroup()
 
-fire_table <- extirpation_150_fire %>% 
+fire_table <- extirpation_fire %>% 
   dplyr::rename(., Extirpations = n) %>% 
-  dplyr::mutate(., Surviving = reps * nrow(extirpation_150_fire) - Extirpations)# %>% 
+  dplyr::mutate(., Surviving = reps * nrow(extirpation_fire) - Extirpations)# %>% 
 # dplyr::mutate(., Odds = Extirpations/Surviving) %>% 
 # dplyr::select(., -n, -Extirpations, - Surviving)  %>% 
 # dplyr::mutate(., DecreasingHighNo  = rep(test$Odds[test$Treatment == "Decreasing fire return interval High dispersal No Restoration"], nrow(test))) %>% 
@@ -1684,7 +882,10 @@ outcomes <- c("Etirpation", "Surviving")
 (dat <- matrix(c(as.numeric(fire_table$Extirpations), as.numeric(fire_table$Surviving)), byrow = F, nrow = nrow(fire_table)))
 dimnames(dat) <- list("Fire" = fire, "Outcome" = outcomes)
 
-(fire_ORs <- fisher.test(dat))
+(dec_his_fire_ORs <- fisher.test(dat[1:2,]))
+(his_sup_fire_ORs <- fisher.test(dat[2:3,]))
+(dec_sup_fire_ORs <- fisher.test(dat[c(1,3),]))
+
 
 fire_ORs <- data.frame(OR = fire_ORs$estimate, LL = fire_ORs$conf.int[1], UL = fire_ORs$conf.int[2]) %>% 
   dplyr::mutate(., Comparison = "Decreasing/Historic")  %>% 

@@ -453,16 +453,16 @@ colnames(wbp_monitoring) <- cols
 
 
 out <- wbp_monitoring %>% 
-  arrange(., PlotID, SurveyYear) %>% 
-  mutate(., PreviousLiving = lag(TotalLiveTreesThisSurvey)) %>% 
-  group_by(., PlotID, SurveyYear) %>% 
-  mutate(., PreviousLiving = ifelse(YearSiteEstablished == SurveyYear, NA, PreviousLiving)) %>% 
-  ungroup(.) %>% 
+  dplyr::arrange(., PlotID, SurveyYear) %>% 
+  dplyr::mutate(., PreviousLiving = lag(TotalLiveTreesThisSurvey)) %>% 
+  dplyr::group_by(., PlotID, SurveyYear) %>% 
+  dplyr::mutate(., PreviousLiving = ifelse(YearSiteEstablished == SurveyYear, NA, PreviousLiving)) %>% 
+  dplyr::ungroup(.) %>% 
   dplyr::select(., PlotID, SurveyYear, PreviousLiving, TotalLiveTreesThisSurvey, DeadTrees_fromLivePrecedingSurvey,
                 RecentlyDeadTrees_fromLivePrecedingSurvey) %>% 
-  mutate(., TotalDead = DeadTrees_fromLivePrecedingSurvey + RecentlyDeadTrees_fromLivePrecedingSurvey) %>% 
-  mutate(., Prop = TotalDead/PreviousLiving) %>% 
-  mutate(., SurvProb = 1- Prop)
+  dplyr::mutate(., TotalDead = DeadTrees_fromLivePrecedingSurvey + RecentlyDeadTrees_fromLivePrecedingSurvey) %>% 
+  dplyr::mutate(., Prop = TotalDead/PreviousLiving) %>% 
+  dplyr::mutate(., SurvProb = 1- Prop)
 
 
 mean_MA_s <- mean(out$SurvProb, na.rm = T)

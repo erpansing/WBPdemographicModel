@@ -1331,9 +1331,9 @@ fia_density <- fia_density %>%
 
 fia.comparison.plot <- 
   ggplot2::ggplot(data = historic_models, ggplot2::aes(x = SAP_MA_Density))+
-  ggplot2::geom_density(fill = "#01665e", col = "black", alpha = 0.5) +
+  ggplot2::geom_density(fill = "#01665e", col = "black", alpha = 0.75) +
   ggplot2::geom_density(data = fia_density, aes(x = SAP_MA_density),
-                        fill = "#8c510a", alpha = 0.5, col = "black") +
+                        fill = "#8c510a", alpha = 0.75, col = "black") +
   # ggplot2::theme_bw() +
   ggplot2::labs(x = "\nTree density (no. trees/hectare)", 
                 y = "Probability density")+
@@ -1342,7 +1342,7 @@ fia.comparison.plot <-
   ggplot2::theme(legend.position = "none") +
   ggplot2::theme(plot.margin = grid::unit(c(2.5, 1, 1, 1), "lines"))
 
-legd <- grid::legendGrob(c("Historical fire return interval", "FIA"),
+legd <- grid::legendGrob(c("Predicted historical time period", "FIA Data"),
                          nrow          = 1,
                          ncol          = 2,
                          lines.first   = TRUE,
@@ -1352,7 +1352,6 @@ legd <- grid::legendGrob(c("Historical fire return interval", "FIA"),
                          pch           = 22,
                          gp = grid::gpar(col      = rep(c("black"), 2),
                                          fill     = c("#01665e", "#8c510a"),
-                                         alpha =  c(1, 0.4),
                                          fontsize = axis_text_size,
                                          fontface = "bold"),
                          vp = grid::viewport(x    = 0,

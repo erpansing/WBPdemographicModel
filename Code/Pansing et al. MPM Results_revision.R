@@ -174,6 +174,10 @@ projection_time <- 500
 reps <- 5000
 area <- 2000
 
+### Set plotting theme
+
+theme_set(theme_bw())
+
 axis_label_text_size <- 23
 strip_text_size <- 18
 axis_text_size <- 18
@@ -394,7 +398,7 @@ density_tSinceFire <-  pops %>%
 (year30density <- pops %>% 
   dplyr::filter(., tSinceFire <= 30) %>% 
   dplyr::group_by(., tSinceFire) %>% 
-  dplyr::summarise_at(., dplyr::vars(SAP_MA_Density, Density), dplyr::funs(median,  q1, q3)))
+  dplyr::summarise_at(., dplyr::vars(SAP_MA_Density, Density), dplyr::funs(median, mean,lower, upper, min, max, q1, q3)))
 
 
 # write.csv(year30density, file = paste0(proj_dir, export_results_dir, "30 Year Post Fire Density Historical dispersal averaged in hectares revision.csv"))
@@ -851,6 +855,7 @@ dimnames(dat) <- list("Period" = period, "Outcome" = outcomes)
 
 HistoricFRI_ORs <- data.frame(OR = HistoricFRI_ORs$estimate, LL = HistoricFRI_ORs$conf.int[1], UL = HistoricFRI_ORs$conf.int[2]) %>% 
   dplyr::mutate(., Comparison = "Current/Historic") %>% 
+  dplyr::mutate(., Period = "All") %>% 
   dplyr::mutate(., FireReturnInterval = "Historic") %>% 
   dplyr::mutate(., DispersalProbability = "All")
 
@@ -882,13 +887,16 @@ outcomes <- c("Etirpation", "Surviving")
 (dat <- matrix(c(as.numeric(fire_table$Extirpations), as.numeric(fire_table$Surviving)), byrow = F, nrow = nrow(fire_table)))
 dimnames(dat) <- list("Fire" = fire, "Outcome" = outcomes)
 
-(dec_his_fire_ORs <- fisher.test(dat[1:2,]))
-(his_sup_fire_ORs <- fisher.test(dat[2:3,]))
-(dec_sup_fire_ORs <- fisher.test(dat[c(1,3),]))
+(dec_his_fire <- fisher.test(dat[1:2,]))
+(his_sup_fire <- fisher.test(dat[2:3,]))
+(dec_sup_fire <- fisher.test(dat[c(1,3),]))
 
 
-fire_ORs <- data.frame(OR = fire_ORs$estimate, LL = fire_ORs$conf.int[1], UL = fire_ORs$conf.int[2]) %>% 
-  dplyr::mutate(., Comparison = "Decreasing/Historic")  %>% 
+fire_ORs <- data.frame(OR = c(dec_his_fire$estimate,   his_sup_fire$estimate,    dec_sup_fire$estimate),
+                       LL = c(dec_his_fire$conf.int[1],his_sup_fire$conf.int[1], dec_sup_fire$conf.int[1]), 
+                       UL = c(dec_his_fire$conf.int[2],his_sup_fire$conf.int[2], dec_sup_fire$conf.int[2])) %>% 
+  dplyr::mutate(., Comparison = c("Decreasing/historical", "Historical/suppression", "Decreasing/suppression"))  %>% 
+  dplyr::mutate(., Period = "Current") %>% 
   dplyr::mutate(., FireReturnInterval = "All") %>% 
   dplyr::mutate(., DispersalProbability = "All")
   
@@ -898,7 +906,7 @@ fire_ORs <- data.frame(OR = fire_ORs$estimate, LL = fire_ORs$conf.int[1], UL = f
 # odds of extirpation
 #---------------------------------------|---------------------------------------
 
-extirpation_150_dispersal_decreasing <- extinct %>% 
+extirpation_dispersal_decreasing <- extinct %>% 
   dplyr::filter(., Period == "Current" & Fire_scenario == "Decreasing fire return interval") %>% 
   # dplyr::filter(., t <= 150) %>%
   dplyr::group_by(.,Dispersal_probability) %>% 
@@ -906,7 +914,7 @@ extirpation_150_dispersal_decreasing <- extinct %>%
   dplyr::ungroup()
 
 
-dispersal_table_decreasing <- extirpation_150_dispersal_decreasing %>% 
+dispersal_table_decreasing <- extirpation_dispersal_decreasing %>% 
   dplyr::select(., Dispersal_probability, n) %>% 
   dplyr::rename(., Extirpations = n) %>% 
   dplyr::mutate(., Surviving = reps - Extirpations)# %>% 
@@ -917,18 +925,22 @@ dispersal_table_decreasing <- extirpation_150_dispersal_decreasing %>%
 # dplyr::mutate(., )
 
 dispersal <- as.character(dispersal_table_decreasing$Dispersal_probability)
-outcomes <- c("Etirpation", "Surviving")
+outcomes <- c("Extirpation", "Surviving")
 
 (dat <- matrix(c(as.numeric(dispersal_table_decreasing$Extirpations), as.numeric(dispersal_table_decreasing$Surviving)), byrow = F, nrow = nrow(dispersal_table_decreasing)))
 dimnames(dat) <- list("Dispersal" = dispersal, "Outcome" = outcomes)
+
+dat <- as.data.frame(dat) %>% 
+  dplyr::arrange(., Surviving)
 
 (dispersal_Current_ORs_decreasing <- fisher.test(dat))
 
 dispersal_Current_ORs_decreasing <- data.frame(OR = dispersal_Current_ORs_decreasing$estimate, 
                                                LL = dispersal_Current_ORs_decreasing$conf.int[1], 
                                                UL = dispersal_Current_ORs_decreasing$conf.int[2]) %>% 
-  dplyr::mutate(., Comparison = "High/Low") %>% 
-  dplyr::mutate(., FireReturnInterval = "Decreasing") %>% 
+  dplyr::mutate(., Comparison = "Low/high") %>% 
+  dplyr::mutate(., Period = "Current") %>% 
+  dplyr::mutate(., FireReturnInterval = "Decreasing fire return interval") %>% 
   dplyr::mutate(., DispersalProbability = "All")
 
 #---------------------------------------|---------------------------------------
@@ -937,15 +949,15 @@ dispersal_Current_ORs_decreasing <- data.frame(OR = dispersal_Current_ORs_decrea
 # odds of extirpation
 #---------------------------------------|---------------------------------------
 
-extirpation_150_dispersal_historic <- extinct %>% 
-  dplyr::filter(., Period == "Current" & Fire_scenario == "Historic fire return interval") %>% 
+extirpation_dispersal_historic <- extinct %>% 
+  dplyr::filter(., Period == "Current" & Fire_scenario == "Historical fire return interval") %>% 
   # filter(., t <= 150) %>%
   dplyr::group_by(.,Dispersal_probability) %>% 
   dplyr::tally() %>% 
   dplyr::ungroup()
 
 
-dispersal_table_historic <- extirpation_150_dispersal_historic %>% 
+dispersal_table_historic <- extirpation_dispersal_historic %>% 
   dplyr::select(., Dispersal_probability, n) %>% 
   dplyr::rename(., Extirpations = n) %>% 
   dplyr::mutate(., Surviving = reps - Extirpations)# %>% 
@@ -961,6 +973,9 @@ outcomes <- c("Etirpation", "Surviving")
 (dat <- matrix(c(as.numeric(dispersal_table_historic$Extirpations), as.numeric(dispersal_table_historic$Surviving)), byrow = F, nrow = nrow(dispersal_table_historic)))
 dimnames(dat) <- list("Dispersal" = dispersal, "Outcome" = outcomes)
 
+dat <- as.data.frame(dat) %>% 
+  dplyr::arrange(., Surviving)
+
 (dispersal_Current_ORs_historic <- fisher.test(dat))
 
 
@@ -968,8 +983,9 @@ dimnames(dat) <- list("Dispersal" = dispersal, "Outcome" = outcomes)
 dispersal_Current_ORs_historic <- data.frame(OR = dispersal_Current_ORs_historic$estimate, 
                                              LL = dispersal_Current_ORs_historic$conf.int[1], 
                                              UL = dispersal_Current_ORs_historic$conf.int[2]) %>% 
-  dplyr::mutate(., Comparison = "High/Low") %>% 
-  dplyr::mutate(., FireReturnInterval = "Historic") %>% 
+  dplyr::mutate(., Comparison = "Low/high") %>% 
+  dplyr::mutate(., Period = "Current") %>% 
+  dplyr::mutate(., FireReturnInterval = "Historical fire return interval") %>% 
   dplyr::mutate(., DispersalProbability = "All")
 
 
@@ -977,7 +993,7 @@ dispersal_Current_ORs_historic <- data.frame(OR = dispersal_Current_ORs_historic
 #                                  High dispersal
 #---------------------------------------|---------------------------------------
 
-extirpation_150_highDispersal_fire <- extinct %>% 
+extirpation_highDispersal_fire <- extinct %>% 
   dplyr::filter(., Period == "Current" & Dispersal_probability == "High dispersal") %>% 
   # dplyr::filter(., t <= 150) %>%
   dplyr::group_by(.,Fire_scenario) %>% 
@@ -985,7 +1001,7 @@ extirpation_150_highDispersal_fire <- extinct %>%
   dplyr::ungroup()
 
 
-fire_high_dispersal_table <- extirpation_150_highDispersal_fire %>% 
+fire_high_dispersal_table <- extirpation_highDispersal_fire %>% 
   dplyr::select(., Fire_scenario, n) %>% 
   dplyr::rename(., Extirpations = n) %>% 
   dplyr::mutate(., Surviving = reps - Extirpations)# %>% 
@@ -1001,22 +1017,25 @@ outcomes <- c("Etirpation", "Surviving")
 (dat <- matrix(c(as.numeric(fire_high_dispersal_table$Extirpations), as.numeric(fire_high_dispersal_table$Surviving)), byrow = F, nrow = nrow(fire_high_dispersal_table)))
 dimnames(dat) <- list("Fire" = fire, "Outcome" = outcomes)
 
-(fire_high_dispersal_ORs <- fisher.test(dat))
+(dec_his_fire_high_dispersal <- fisher.test(dat[c(1,2),]))
+(dec_sup_fire_high_dispersal <- fisher.test(dat[c(1,3),]))
+(his_sup_fire_high_dispersal <- fisher.test(dat[c(2,3),]))
 
 
-fire_high_dispersal_ORs <- data.frame(OR = fire_high_dispersal_ORs$estimate, 
-                                      LL = fire_high_dispersal_ORs$conf.int[1], 
-                                      UL = fire_high_dispersal_ORs$conf.int[2]) %>% 
-  dplyr::mutate(., Comparison = "Decreasing/Historic") %>% 
+fire_high_dispersal_ORs <- data.frame(OR = c(dec_his_fire_high_dispersal$estimate   , dec_sup_fire_high_dispersal$estimate,    his_sup_fire_high_dispersal$estimate), 
+                                      LL = c(dec_his_fire_high_dispersal$conf.int[1], dec_sup_fire_high_dispersal$conf.int[1], his_sup_fire_high_dispersal$conf.int[1]), 
+                                      UL = c(dec_his_fire_high_dispersal$conf.int[2], dec_sup_fire_high_dispersal$conf.int[2], his_sup_fire_high_dispersal$conf.int[2])) %>% 
+  dplyr::mutate(., Comparison = c("Decreasing/historical", "Decreasing/suppression", "Historical/suppression")) %>% 
+  dplyr::mutate(., Period = "Current") %>% 
   dplyr::mutate(., FireReturnInterval = "All") %>% 
-  dplyr::mutate(., DispersalProbability = "High")
+  dplyr::mutate(., DispersalProbability = "High dispersal")
 
 
 #---------------------------------------|---------------------------------------
 #                                  Low dispersal
 #---------------------------------------|---------------------------------------
 
-extirpation_150_lowDispersal_fire <- extinct %>% 
+extirpation_lowDispersal_fire <- extinct %>% 
   dplyr::filter(., Period == "Current" & Dispersal_probability == "Low dispersal") %>% 
   # filter(., t <= 150) %>%
   dplyr::group_by(.,Fire_scenario) %>% 
@@ -1024,7 +1043,7 @@ extirpation_150_lowDispersal_fire <- extinct %>%
   dplyr::ungroup()
 
 
-fire_low_dispersal_table <- extirpation_150_lowDispersal_fire %>% 
+fire_low_dispersal_table <- extirpation_lowDispersal_fire %>% 
   dplyr::select(., Fire_scenario, n) %>% 
   dplyr::rename(., Extirpations = n) %>% 
   dplyr::mutate(., Surviving = reps - Extirpations)# %>% 
@@ -1040,16 +1059,19 @@ outcomes <- c("Etirpation", "Surviving")
 (dat <- matrix(c(as.numeric(fire_low_dispersal_table$Extirpations), as.numeric(fire_low_dispersal_table$Surviving)), byrow = F, nrow = nrow(fire_low_dispersal_table)))
 dimnames(dat) <- list("Fire" = fire, "Outcome" = outcomes)
 
-(fire_low_dispersal_ORs <- fisher.test(dat))
+(dec_his_fire_low_dispersal <- fisher.test(dat[c(1,2),]))
+(dec_sup_fire_low_dispersal <- fisher.test(dat[c(1,3),]))
+(his_sup_fire_low_dispersal <- fisher.test(dat[c(2,3),]))
 
 
 
-fire_low_dispersal_ORs <- data.frame(OR = fire_low_dispersal_ORs$estimate, 
-                                     LL = fire_low_dispersal_ORs$conf.int[1], 
-                                     UL = fire_low_dispersal_ORs$conf.int[2]) %>% 
+fire_low_dispersal_ORs <- data.frame(OR = c(dec_his_fire_low_dispersal$estimate,   dec_sup_fire_low_dispersal$estimate, his_sup_fire_low_dispersal$estimate), 
+                                     LL = c(dec_his_fire_low_dispersal$conf.int[1],dec_sup_fire_low_dispersal$conf.int[1], his_sup_fire_low_dispersal$conf.int[1]),  
+                                     UL = c(dec_his_fire_low_dispersal$conf.int[2],dec_sup_fire_low_dispersal$conf.int[2], his_sup_fire_low_dispersal$conf.int[2])) %>% 
   dplyr::mutate(., Comparison = "Decreasing/Historic") %>% 
+  dplyr::mutate(., Period = "Current") %>% 
   dplyr::mutate(., FireReturnInterval = "All") %>% 
-  dplyr::mutate(., DispersalProbability = "Low")
+  dplyr::mutate(., DispersalProbability = "Low dispersal")
 
 
 # #---------------------------------------|---------------------------------------
@@ -1095,14 +1117,14 @@ fire_low_dispersal_ORs <- data.frame(OR = fire_low_dispersal_ORs$estimate,
 #---------------------------------------|---------------------------------------
 
 ORPattern <- grep("_OR",names(.GlobalEnv),value=TRUE)
-ORs <- bind_rows(do.call("list",mget(ORPattern)))
+ORs <- rbindlist(mget((ORPattern)))
 
 ORs <- ORs %>% 
   dplyr::mutate(., OddsRatio = ifelse(OR <1, 1/OR, OR)) %>% 
   dplyr::mutate(., LL_ = ifelse(OR <1, 1/UL, LL)) %>% 
   dplyr::mutate(., UL_ = ifelse(OR <1, 1/LL, UL))%>% 
   dplyr::mutate(., Comparison = ifelse(OR < 1, paste0(Comparison, "*"), Comparison)) %>% 
-  dplyr::select(., Comparison, FireReturnInterval, DispersalProbability, OddsRatio, LL_, UL_) %>% 
+  dplyr::select(., Comparison, Period, FireReturnInterval, DispersalProbability, OddsRatio, LL_, UL_) %>% 
   dplyr::rename(., UL = UL_, LL = LL_)
 
 
@@ -1115,7 +1137,7 @@ OR_table <- ORs %>%
 
 
 
-write.csv(OR_table, file = paste0(proj_dir, export_table_dir, "OR table 150.csv"))
+write.csv(OR_table, file = paste0(proj_dir, export_results_dir, "OR table.csv"))
 
 # tiff(filename = paste0(proj_dir, figures_dir, "Final? OR by category fire dispersal restoration.tiff"),
 #      width = 12,
@@ -1124,11 +1146,11 @@ write.csv(OR_table, file = paste0(proj_dir, export_table_dir, "OR table 150.csv"
 #      res = 300,
 #      compression = "lzw")
 
-ggplot2::ggplot(data = ORs, ggplot2::aes(x = Comparison, y = OddsRatio))+
+ggplot2::ggplot(data = ORs, ggplot2::aes(x = DispersalProbability, y = OddsRatio))+
   ggplot2::geom_hline(yintercept = 1, col = "black", lty = 2) +
   ggplot2::geom_linerange(ggplot2::aes(ymin = LL, ymax = UL), lwd = 1.5,
                  position = pd) +
-  ggplot2::geom_point(aes(x = Comparison,
+  ggplot2::geom_point(aes(x = DispersalProbability,
                       y = OddsRatio),
                       size = 4,
                       stroke = 2,
@@ -1138,7 +1160,7 @@ ggplot2::ggplot(data = ORs, ggplot2::aes(x = Comparison, y = OddsRatio))+
                   fill= "white") +
                  # scale_color_manual(values = c( "#e41a1c","#377eb8","#4daf4a" ))+
   ggplot2::theme_bw() +
-  ggplot2::facet_grid(~ Comparison)+
+  ggplot2::facet_grid(Period~ Comparison)+
   ggplot2::theme(strip.background = ggplot2::element_rect(colour = "black", fill = "white"),
                  strip.text       = ggplot2::element_text(colour = "black",  size = strip_text_size)) +
   ggplot2::labs(x = "Time Horizon",
@@ -1296,3 +1318,135 @@ dev.off()
   
 
 write.csv(year500density, file = paste0(proj_dir, export_table_dir, "500 year density.csv"))
+
+#####################################################################################
+#              Comparison to FIA data
+################################################################################
+
+load( file = paste0(proj_dir, data_dir, "fia density.Rda"))
+
+fia_density <- fia_density %>% 
+  mutate(., SAP_MA_density = (sapling_count + mature_count)/1000)
+
+
+fia.comparison.plot <- 
+  ggplot2::ggplot(data = historic_models, ggplot2::aes(x = SAP_MA_Density))+
+  ggplot2::geom_density(fill = "#01665e", col = "black", alpha = 0.5) +
+  ggplot2::geom_density(data = fia_density, aes(x = SAP_MA_density),
+                        fill = "#8c510a", alpha = 0.5, col = "black") +
+  # ggplot2::theme_bw() +
+  ggplot2::labs(x = "\nTree density (no. trees/hectare)", 
+                y = "Probability density")+
+  ggplot2::theme(axis.text        = ggplot2::element_text(size = axis_text_size - 2)) +
+  ggplot2::theme(axis.title       = ggplot2::element_text(size = axis_label_text_size))+
+  ggplot2::theme(legend.position = "none") +
+  ggplot2::theme(plot.margin = grid::unit(c(2.5, 1, 1, 1), "lines"))
+
+legd <- grid::legendGrob(c("Historical fire return interval", "FIA"),
+                         nrow          = 1,
+                         ncol          = 2,
+                         lines.first   = TRUE,
+                         hgap          = grid::unit(2, "lines"),
+                         vgap          = grid::unit(1, "lines"),
+                         default.units = "lines",
+                         pch           = 22,
+                         gp = grid::gpar(col      = rep(c("black"), 2),
+                                         fill     = c("#01665e", "#8c510a"),
+                                         alpha =  c(1, 0.4),
+                                         fontsize = axis_text_size,
+                                         fontface = "bold"),
+                         vp = grid::viewport(x    = 0,
+                                             y    = 0,
+                                             w    = 1.05,
+                                             h    = 1.92,
+                                             just = c("left", "bottom")))
+grid::grid.draw(legd)
+
+
+
+#####################################################################################
+#               Comparison to early succession data 
+################################################################################
+
+load("/Users/elizabethpansing/Box/Yellowstone/88-Fires-Analysis/2017 YNP Data.Rda")
+
+hm <- pial %>% 
+  dplyr::filter(., StudyArea == "HM") %>% 
+  dplyr::mutate(., ifelse(Year == 2016, 2017, Year)) %>% 
+  dplyr::select(.,   Year, PlotNo) %>% 
+  dplyr::group_by(., Year, PlotNo) %>% 
+  dplyr::tally(.) %>% 
+  dplyr::ungroup(.) %>% 
+  tidyr::complete(.,Year                = c(1990, 1991, 1992, 1994, 1995, 2001, 2017), 
+                  PlotNo                = 1:150,
+                  fill                  = list(n = 0)) %>% 
+  dplyr::mutate(., Density = n/20 * 10000) 
+
+
+mw <- pial %>% 
+  dplyr::filter(., StudyArea == "MW") %>% 
+  dplyr::select(., Year, PlotNo) %>% 
+  dplyr::group_by(.,Year, PlotNo) %>% 
+  dplyr::tally(.) %>% 
+  dplyr::ungroup(.) %>% 
+  tidyr::complete(.,Year                = c(1990, 1991, 1992, 1994, 1995, 2001, 2017), 
+                  PlotNo                = c(200:300, 330:354),
+                  fill                  = list(n = 0)) %>% 
+  dplyr::mutate(., Density = n/20 * 10000) %>% 
+  dplyr::filter(., !(Year == 2017 & PlotNo > 300))
+
+
+recovery88 <- bind_rows(hm, mw) %>% 
+  dplyr::group_by(., Year) %>% 
+  dplyr::summarise_at(., vars(Density), dplyr::funs(min, max, median, mean)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(., tSinceFire = Year - 1988) 
+
+
+names(recovery88)<- paste0("observed.", names(recovery88))
+names(year30density) <- paste0("predicted.", names(year30density))
+
+comparison_data <- year30density %>% 
+  dplyr::filter(., predicted.tSinceFire %in% recovery88$observed.tSinceFire) %>% 
+  merge(., recovery88 , by.x = "predicted.tSinceFire", by.y = "observed.tSinceFire")
+
+
+inset_figure <- comparison_data %>%   
+  ggplot2::ggplot(aes(y = predicted.Density_mean, x = observed.mean)) +
+  ggplot2::geom_linerange(aes(x = observed.mean, 
+                              ymin = predicted.Density_lower,
+                              ymax = predicted.Density_upper), lwd = 1.25) +
+  ggplot2::geom_point(aes(y = predicted.Density_mean, x = observed.mean), pch = 21, fill = "white", size = 3, stroke = 1.5) +
+  scale_y_continuous(limits = c(0, 1100)) +
+  scale_x_continuous(limits = c(0, 1100)) +
+  geom_abline(slope=1, intercept=0, lty = 2) +
+  coord_flip() +
+  theme_bw() +
+  labs(x = "Predicted tree \ndensity (trees/ha)", y = "Observed tree \ndensity (trees/ha)")+
+  ggplot2::theme(axis.text        = ggplot2::element_text(size = 18)) +
+  ggplot2::theme(axis.title       = ggplot2::element_text(size = 20))
+  
+
+vp <- grid::viewport(width = 0.4, height = 0.4, x = 0.98,
+               y = 0.93, just = c("right",
+                                                "top"))
+
+full <- function() {
+  print(fia.comparison.plot)
+  theme_set(theme_bw(base_size = 8))
+  print(inset_figure, vp = vp)
+  theme_set(theme_bw())
+}
+
+tiff(filename = paste0(proj_dir, figures_dir, "Model accuracy check figure.tiff"),
+     width = 12,
+     height = 8.5,
+     units = "in",
+     res = 300,
+     compression = "lzw")
+
+full()
+grid::grid.draw(legd)
+
+dev.off()
+
